@@ -1,49 +1,59 @@
-import type { RapierRigidBody } from "@react-three/rapier";
+import { useMemo } from "react";
 import Player from "../../entities/Player";
+import type { Team } from "../../entities/Player/brain";
+import { FORMATION_4_3_3, homePositionForSlot } from "../../entities/formation";
+import { generateSquadNames } from "../../entities/names";
+import type { GameLoop } from "../../engine/match/GameLoop";
 
 const TEAM_A_COLOR = "#1976d2"; // blue
 const TEAM_B_COLOR = "#c62828"; // red
 
-// One half of a simple mirrored 4-4-2: GK, back four, midfield four, two
-// forwards. Team B is Team A reflected across the halfway line (z=0).
-const TEAM_A_POSITIONS: [number, number, number][] = [
-  [0, 1, -48], // GK
-  [-20, 1, -34],
-  [-7, 1, -34],
-  [7, 1, -34],
-  [20, 1, -34], // defense
-  [-20, 1, -14],
-  [-7, 1, -14],
-  [7, 1, -14],
-  [20, 1, -14], // midfield
-  [-8, 1, -6],
-  [8, 1, -6], // forwards
-];
-
-const TEAM_B_POSITIONS: [number, number, number][] = TEAM_A_POSITIONS.map(
-  ([x, y, z]) => [x, y, -z] as [number, number, number],
-);
-
-const ALL_PLAYERS = [
-  ...TEAM_A_POSITIONS.map((position) => ({ position, color: TEAM_A_COLOR })),
-  ...TEAM_B_POSITIONS.map((position) => ({ position, color: TEAM_B_COLOR })),
-];
-
-type Props = {
-  playersRef: React.RefObject<(RapierRigidBody | null)[]>;
+type RosterEntry = {
+  home: [number, number, number];
+  team: Team;
+  color: string;
+  name: string;
+  role: string;
 };
 
-const Players = ({ playersRef }: Props) => {
+const buildRoster = (): RosterEntry[] => {
+  const names = generateSquadNames(22);
+  const teamA = FORMATION_4_3_3.map((slot, i) => ({
+    home: homePositionForSlot(slot, "A"),
+    team: "A" as Team,
+    color: TEAM_A_COLOR,
+    name: names[i],
+    role: slot.role,
+  }));
+  const teamB = FORMATION_4_3_3.map((slot, i) => ({
+    home: homePositionForSlot(slot, "B"),
+    team: "B" as Team,
+    color: TEAM_B_COLOR,
+    name: names[11 + i],
+    role: slot.role,
+  }));
+  return [...teamA, ...teamB];
+};
+
+type Props = {
+  gameLoop: GameLoop;
+};
+
+const Players = ({ gameLoop }: Props) => {
+  const roster = useMemo(buildRoster, []);
+
   return (
     <>
-      {ALL_PLAYERS.map(({ position, color }, i) => (
+      {roster.map((player, i) => (
         <Player
           key={i}
-          home={position}
-          color={color}
-          ref={(instance) => {
-            playersRef.current[i] = instance;
-          }}
+          index={i}
+          home={player.home}
+          team={player.team}
+          color={player.color}
+          name={player.name}
+          role={player.role}
+          gameLoop={gameLoop}
         />
       ))}
     </>

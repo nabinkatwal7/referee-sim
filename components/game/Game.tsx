@@ -1,7 +1,10 @@
 import { useRef } from "react";
 import { KeyboardControls, PerspectiveCamera } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { Physics, type RapierRigidBody } from "@react-three/rapier";
+import { Physics } from "@react-three/rapier";
+import { GameLoop } from "../../engine/match/GameLoop";
+import GameLoopRunner from "../../engine/match/GameLoopRunner";
+import { useGameStore } from "../../engine/match/gameState";
 import { REFEREE_KEYBOARD_MAP } from "../../entities/Referee/controls";
 import HUD from "./HUD";
 import Scene from "./Scene";
@@ -10,9 +13,10 @@ import ThirdPersonCamera from "./ThirdPersonCamera";
 import { REFEREE_START_POSITION } from "./pitchDimensions";
 
 const Game = () => {
-  const refereeRef = useRef<RapierRigidBody>(null);
-  const ballRef = useRef<RapierRigidBody>(null);
-  const playersRef = useRef<(RapierRigidBody | null)[]>([]);
+  const gameLoopRef = useRef<GameLoop | null>(null);
+  if (!gameLoopRef.current) gameLoopRef.current = new GameLoop();
+  const gameLoop = gameLoopRef.current;
+  const paused = useGameStore((state) => state.paused);
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
@@ -28,7 +32,7 @@ const Game = () => {
             fov={50}
             far={20000}
           />
-          <ThirdPersonCamera target={refereeRef} />
+          <ThirdPersonCamera gameLoop={gameLoop} />
           <ambientLight intensity={0.5} />
           <directionalLight
             position={[80, 140, 80]}
@@ -42,9 +46,10 @@ const Game = () => {
             shadow-camera-far={600}
           />
           <Skybox />
-          <Physics>
-            <Scene refereeRef={refereeRef} ballRef={ballRef} playersRef={playersRef} />
+          <Physics paused={paused}>
+            <Scene gameLoop={gameLoop} />
           </Physics>
+          <GameLoopRunner gameLoop={gameLoop} />
         </Canvas>
         <HUD />
       </KeyboardControls>

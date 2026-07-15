@@ -2,22 +2,22 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { RapierRigidBody } from "@react-three/rapier";
 import * as THREE from "three";
+import type { GameLoop } from "../../engine/match/GameLoop";
 
 // Higher = tighter follow, lower = more lag. Framerate-independent (uses delta).
 const FOLLOW_LAMBDA = 3;
 
 type Props = {
-  target: React.RefObject<RapierRigidBody | null>;
+  gameLoop: GameLoop;
 };
 
-const ThirdPersonCamera = ({ target }: Props) => {
+const ThirdPersonCamera = ({ gameLoop }: Props) => {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const smoothed = useRef<THREE.Vector3 | null>(null);
 
   useFrame((_state, delta) => {
-    const body = target.current;
+    const body = gameLoop.getReferee();
     const controls = controlsRef.current;
     if (!body || !controls) return;
 

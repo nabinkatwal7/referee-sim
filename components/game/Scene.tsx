@@ -1,7 +1,6 @@
-import type { RapierRigidBody } from "@react-three/rapier";
 import Ball from "../../entities/Ball";
-import Passing from "../../entities/Passing";
 import Referee from "../../entities/Referee";
+import type { GameLoop } from "../../engine/match/GameLoop";
 import Goals from "./Goals";
 import Ground from "./Ground";
 import Lines from "./Lines";
@@ -11,12 +10,10 @@ import Roof from "./Roof";
 import Seats from "./Seats";
 
 type Props = {
-  refereeRef: React.RefObject<RapierRigidBody | null>;
-  ballRef: React.RefObject<RapierRigidBody | null>;
-  playersRef: React.RefObject<(RapierRigidBody | null)[]>;
+  gameLoop: GameLoop;
 };
 
-const Scene = ({ refereeRef, ballRef, playersRef }: Props) => {
+const Scene = ({ gameLoop }: Props) => {
   return (
     <>
       <Ground />
@@ -25,10 +22,9 @@ const Scene = ({ refereeRef, ballRef, playersRef }: Props) => {
       <Goals />
       <Seats />
       <Roof />
-      <Players playersRef={playersRef} />
-      <Ball ref={ballRef} />
-      <Referee ref={refereeRef} />
-      <Passing ballRef={ballRef} playersRef={playersRef} />
+      <Players gameLoop={gameLoop} />
+      <Ball gameLoop={gameLoop} />
+      <Referee gameLoop={gameLoop} />
     </>
   );
 };

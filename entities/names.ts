@@ -1,0 +1,26 @@
+const FIRST_NAMES = [
+  "Marco", "Luca", "Diego", "Kai", "Noah", "Leo", "Mateo", "Ivan", "Sam", "Theo",
+  "Omar", "Ben", "Alex", "Jamal", "Yusuf", "Enzo", "Milo", "Ruben", "Tariq", "Cole",
+  "Andres", "Felix",
+];
+
+const LAST_NAMES = [
+  "Rossi", "Silva", "Novak", "Reyes", "Baker", "Fischer", "Diallo", "Moreno", "Grant", "Kova",
+  "Haddad", "Weber", "Costa", "Nkomo", "Farrell", "Lund", "Okafor", "Vidal", "Marsh", "Petit",
+  "Ibarra", "Sorensen",
+];
+
+// Random, unique full names for a squad.
+export const generateSquadNames = (count: number): string[] => {
+  const used = new Set<string>();
+  const names: string[] = [];
+  while (names.length < count) {
+    const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+    const last = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+    const full = `${first} ${last}`;
+    if (used.has(full)) continue;
+    used.add(full);
+    names.push(full);
+  }
+  return names;
+};
