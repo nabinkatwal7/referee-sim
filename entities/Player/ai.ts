@@ -1,17 +1,22 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import * as THREE from "three";
+import { applySteering } from "./avoidance";
+import {
+  createStamina,
+  staminaSpeedFactor,
+  stepStamina,
+  type StaminaState,
+} from "./stamina";
+import type { Pos2 } from "../Ball/nearestPlayer";
 
 const WALK_SPEED = 2.5;
 const RUN_SPEED = 6;
-const RUN_DISTANCE = 8; // beyond this, sprint toward the target
-const ARRIVE_RADIUS = 0.5; // close enough to stop
-const WANDER_RADIUS = 15; // how far from home a new target may be picked
-const MIN_PAUSE = 1; // seconds to stand still before/after each move
+const RUN_DISTANCE = 8;
+const ARRIVE_RADIUS = 0.5;
+const WANDER_RADIUS = 15;
+const MIN_PAUSE = 1;
 const MAX_PAUSE = 3;
 
-// Idle -> Move -> Receive -> Dribble -> Pass -> Shoot -> Tackle -> Celebrate.
-// Idle/Move: wander loop here. Receive/Dribble: brain steers (no teleport).
-// Pass/Shoot/Tackle/Celebrate: short freeze for the kick/react clip.
 export type PlayerFSMState =
   | "idle"
   | "move"
@@ -31,7 +36,6 @@ const FREEZE_STATES = new Set<PlayerFSMState>([
   "celebrate",
 ]);
 
-// Brain owns linvel for these — wander must not overwrite.
 const BRAIN_DRIVEN = new Set<PlayerFSMState>([
   "receive",
   "dribble",
@@ -46,7 +50,8 @@ export type PlayerAIState = {
   pauseUntil: number;
   fsmState: PlayerFSMState;
   stateTimer: number;
-  preferredFoot: 1 | -1; // +1 right, -1 left — used by shoot AI (weak foot)
+  preferredFoot: 1 | -1;
+  stamina: StaminaState;
 };
 
 const randomPause = () => MIN_PAUSE + Math.random() * (MAX_PAUSE - MIN_PAUSE);
@@ -71,9 +76,9 @@ export const createPlayerAIState = (
   fsmState: "idle",
   stateTimer: 0,
   preferredFoot: Math.random() < 0.75 ? 1 : -1,
+  stamina: createStamina(),
 });
 
-// Puts a player into a short freezable reaction (pass/shoot/tackle/celebrate).
 export const enterReactionState = (
   state: PlayerAIState,
   fsmState: Exclude<PlayerFSMState, "idle" | "move" | "receive" | "dribble">,
@@ -87,9 +92,13 @@ export const stepPlayerAI = (
   body: RapierRigidBody,
   state: PlayerAIState,
   delta: number,
+  neighbors: Pos2[] = [],
 ) => {
+  const linvel = body.linvel();
+  const speed = Math.hypot(linvel.x, linvel.z);
+  stepStamina(state.stamina, speed, delta);
+
   if (FREEZE_STATES.has(state.fsmState)) {
-    const linvel = body.linvel();
     body.setLinvel({ x: 0, y: linvel.y, z: 0 }, true);
     state.stateTimer -= delta;
     if (state.stateTimer <= 0) state.fsmState = "move";
@@ -97,12 +106,10 @@ export const stepPlayerAI = (
   }
 
   if (BRAIN_DRIVEN.has(state.fsmState)) {
-    // Receive / dribble velocity set later this tick in stepMatchBrain.
     return;
   }
 
   state.elapsed += delta;
-  const linvel = body.linvel();
 
   if (state.elapsed < state.pauseUntil) {
     state.fsmState = "idle";
@@ -128,9 +135,7 @@ export const stepPlayerAI = (
 
   state.fsmState = "move";
   toTarget.normalize();
-  const speed = distance > RUN_DISTANCE ? RUN_SPEED : WALK_SPEED;
-  body.setLinvel(
-    { x: toTarget.x * speed, y: linvel.y, z: toTarget.z * speed },
-    true,
-  );
+  const base = distance > RUN_DISTANCE ? RUN_SPEED : WALK_SPEED;
+  const capped = base * staminaSpeedFactor(state.stamina);
+  applySteering(body, { x: toTarget.x, z: toTarget.z }, capped, neighbors);
 };

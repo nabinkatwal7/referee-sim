@@ -1,6 +1,10 @@
 import { createStore } from "zustand/vanilla";
 import type { PossibleFoulEvent } from "./events";
-import { MatchState } from "./MatchStateMachine";
+import {
+  createMatchClockSnapshot,
+  MatchState,
+  type MatchClockSnapshot,
+} from "./MatchStateMachine";
 
 export type Score = { home: number; away: number };
 export type Card = { playerIndex: number; type: "yellow" | "red" };
@@ -8,22 +12,23 @@ export type ReplayState = "live" | "replay";
 
 export type GameState = {
   score: Score;
-  time: number; // seconds elapsed in the match
+  time: number; // legacy wall seconds — prefer matchClock.display
+  matchClock: MatchClockSnapshot;
   cards: Card[];
-  possession: number | null; // player index currently holding the ball
+  possession: number | null;
   currentEvent: string | null;
   replayState: ReplayState;
   paused: boolean;
-  matchPhase: MatchState; // mirror of GameLoop's MatchStateMachine, for display only
+  matchPhase: MatchState;
 
-  // Whistle System (Phase 18) + Match Rating (Phase 19)
-  pendingFoul: PossibleFoulEvent | null; // an incident awaiting the player's whistle
+  pendingFoul: PossibleFoulEvent | null;
   decisionWindowOpen: boolean;
-  pendingReactionTime: number | null; // seconds between the incident and the whistle being blown
-  rating: number; // starts at 10.0
+  pendingReactionTime: number | null;
+  rating: number;
 
   addGoal: (team: "home" | "away") => void;
   setTime: (time: number) => void;
+  setMatchClock: (clock: MatchClockSnapshot) => void;
   addCard: (card: Card) => void;
   setPossession: (playerIndex: number | null) => void;
   setCurrentEvent: (event: string | null) => void;
@@ -37,21 +42,10 @@ export type GameState = {
   adjustRating: (delta: number) => void;
 };
 
-// Game state only — score, clock, cards, possession, the current event,
-// replay state, pause, match phase (plus the whistle/rating fields this
-// feature needs). Positions/physics belong to the engine (GameLoop), not
-// here.
-//
-// Architecture rule: the engine must not know React exists. This is built
-// with zustand/vanilla's createStore, which is a plain object with
-// getState/setState/subscribe — no React import anywhere in this file, and
-// none needed by GameLoop/storeSync/whistle either. A separate React hook
-// (components/game/useGameState.ts) wraps THIS store with zustand/react's
-// useStore for the UI layer to consume reactively; the engine never touches
-// that hook.
 export const gameStateStore = createStore<GameState>((set) => ({
   score: { home: 0, away: 0 },
   time: 0,
+  matchClock: createMatchClockSnapshot(),
   cards: [],
   possession: null,
   currentEvent: null,
@@ -66,6 +60,7 @@ export const gameStateStore = createStore<GameState>((set) => ({
 
   addGoal: (team) => set((s) => ({ score: { ...s.score, [team]: s.score[team] + 1 } })),
   setTime: (time) => set({ time }),
+  setMatchClock: (matchClock) => set({ matchClock }),
   addCard: (card) => set((s) => ({ cards: [...s.cards, card] })),
   setPossession: (playerIndex) => set({ possession: playerIndex }),
   setCurrentEvent: (event) => set({ currentEvent: event }),

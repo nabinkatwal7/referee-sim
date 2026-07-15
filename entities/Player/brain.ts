@@ -20,12 +20,18 @@ import {
   carryBallAhead,
   dribbleSteer,
   moveSteer,
+  DRIBBLE_SPEED,
 } from "./dribble";
 import {
   stepGoalkeeper,
   type GoalkeeperAIState,
 } from "./goalkeeper";
 import { approachBall, faceGoal, isBallArriving } from "./receive";
+import {
+  staminaDecisionLag,
+  staminaPowerFactor,
+  staminaSpeedFactor,
+} from "./stamina";
 
 const MIN_PASS_SPEED = 6;
 const MAX_PASS_SPEED = 14;
@@ -290,7 +296,8 @@ export const stepMatchBrain = (
   }
 
   // —— Step 26: decide shoot → pass → dribble → move ——
-  state.commitTimer -= delta;
+  const decisionLag = staminaDecisionLag(possessor.ai.stamina);
+  state.commitTimer -= delta / decisionLag;
   const decision =
     state.commitTimer > 0
       ? ({ kind: "dribble" } as const)
@@ -300,7 +307,7 @@ export const stepMatchBrain = (
           preferredFoot: possessor.ai.preferredFoot,
           teammates: teammateEntries(players, possessor.team.id, from).filter((t) => {
             const p = players[t.index];
-            return p && !isGK(p); // outfield passes; GK clears via own SM
+            return p && !isGK(p);
           }),
           opponents,
           keeperPos: opponentKeeperPos(players, possessor.team),
@@ -308,8 +315,9 @@ export const stepMatchBrain = (
 
   if (decision.kind === "shoot") {
     const { plan } = decision;
+    const power = plan.power * staminaPowerFactor(possessor.ai.stamina);
     ball.setLinvel(
-      { x: plan.direction.x * plan.power, y: 2 + plan.quality * 2, z: plan.direction.z * plan.power },
+      { x: plan.direction.x * power, y: 2 + plan.quality * 2, z: plan.direction.z * power },
       true,
     );
     ball.setAngvel({ x: 0, y: plan.spin * 8, z: 0 }, true);
@@ -336,7 +344,9 @@ export const stepMatchBrain = (
     const dx = receiverPos.x - ballXZ.x;
     const dz = receiverPos.z - ballXZ.z;
     const distance = Math.hypot(dx, dz) || 1;
-    const speed = MathUtils.clamp(distance * 0.5, MIN_PASS_SPEED, MAX_PASS_SPEED);
+    const speed =
+      MathUtils.clamp(distance * 0.5, MIN_PASS_SPEED, MAX_PASS_SPEED) *
+      staminaPowerFactor(possessor.ai.stamina);
 
     ball.setLinvel({ x: (dx / distance) * speed, y: 2, z: (dz / distance) * speed }, true);
     enterReactionState(possessor.ai, "pass", REACTION_DURATION);
@@ -354,13 +364,22 @@ export const stepMatchBrain = (
   }
 
   // Dribble / move: steer + carry ball ahead
-  if (state.commitTimer <= 0) state.commitTimer = 0.75;
+  if (state.commitTimer <= 0) state.commitTimer = 0.75 * decisionLag;
   const steer =
     decision.kind === "dribble"
       ? dribbleSteer(selfPos, attackDir, opponents)
       : moveSteer(selfPos, attackDir);
 
-  applySteer(possessor.body, steer);
+  const allOthers = players
+    .map((o, j) => (o && j !== from ? posOf(o) : null))
+    .filter((x): x is Pos2 => !!x);
+
+  applySteer(
+    possessor.body,
+    steer,
+    DRIBBLE_SPEED * staminaSpeedFactor(possessor.ai.stamina),
+    allOthers,
+  );
   possessor.ai.fsmState = "dribble";
   const v = possessor.body.linvel();
   carryBallAhead(ball, selfPos, steer, { x: v.x, z: v.z });
@@ -451,9 +470,14 @@ const stepFieldDefense = (
     }
 
     const self = posOf(p);
-    const opponents: { pos: Pos2 }[] = [];
-    for (const o of players) {
-      if (o && o.team.id !== p.team.id && !isGK(o)) opponents.push({ pos: posOf(o) });
+    const opponentEntries: { pos: Pos2 }[] = [];
+    const neighborPos: Pos2[] = [];
+    for (let j = 0; j < players.length; j++) {
+      const o = players[j];
+      if (!o || j === i) continue;
+      const op = posOf(o);
+      neighborPos.push(op);
+      if (o.team.id !== p.team.id && !isGK(o)) opponentEntries.push({ pos: op });
     }
 
     const roster = p.team.players.find((tp) => tp.index === i);
@@ -476,11 +500,12 @@ const stepFieldDefense = (
       ballVel: ballVelXZ,
       carrier: carrierPos,
       passTarget,
-      mark: pickMarkTarget(self, opponents, p.team.attackingDirection),
+      mark: pickMarkTarget(self, opponentEntries, p.team.attackingDirection),
       attackDir: p.team.attackingDirection,
       hasBallTeam,
       ownTeam: p.team.id,
       tactics: p.team.tactics,
+      neighbors: neighborPos,
     });
 
     if (

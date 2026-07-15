@@ -1,11 +1,13 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { TeamId } from "../../engine/team/Team";
 import type { Pos2 } from "../Ball/nearestPlayer";
+import { applySteering } from "./avoidance";
 import { predictBallPosition, timeToNearPoint } from "./ballPrediction";
 import type { PlayerAIState } from "./ai";
+import { dynamicShapeTarget, shapePhaseFor, type PlayerAnchors } from "./positioning";
+import { staminaSpeedFactor } from "./stamina";
 import type { TacticalParams } from "./tactics";
 import { DEFAULT_TACTICS } from "./tactics";
-import { dynamicShapeTarget, shapePhaseFor, type PlayerAnchors } from "./positioning";
 
 // Step 31 — Defensive AI (+ 33/36/37 shape & intercept).
 // Track → Intercept pass → Press → Tackle → Recover.
@@ -33,27 +35,24 @@ export type DefendContext = {
   hasBallTeam: TeamId | null;
   ownTeam: TeamId;
   tactics: TacticalParams;
+  neighbors: Pos2[];
 };
 
 export type DefendResult =
   | { kind: "none"; phase: DefendPhase }
   | { kind: "tackle"; phase: "tackle" };
 
-const setVel = (body: RapierRigidBody, x: number, z: number) => {
-  const y = body.linvel().y;
-  body.setLinvel({ x, y, z }, true);
-};
-
 const moveToward = (
   body: RapierRigidBody,
   self: Pos2,
   target: Pos2,
   speed: number,
+  neighbors: Pos2[],
+  staminaMul: number,
 ) => {
   const dx = target.x - self.x;
   const dz = target.z - self.z;
-  const len = Math.hypot(dx, dz) || 1;
-  setVel(body, (dx / len) * speed, (dz / len) * speed);
+  applySteering(body, { x: dx, z: dz }, speed * staminaMul, neighbors);
 };
 
 const markingSpot = (mark: Pos2, attackDir: 1 | -1): Pos2 => ({
@@ -105,37 +104,34 @@ export const stepDefendAI = (
   else ai.fsmState = "move";
 
   const pressMul = 0.85 + ctx.tactics.pressing * 0.4;
+  const stam = staminaSpeedFactor(ai.stamina);
+  const n = ctx.neighbors;
 
   switch (phase) {
     case "track": {
-      if (ctx.mark) moveToward(body, ctx.self, markingSpot(ctx.mark, ctx.attackDir), TRACK_SPEED);
-      else if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, TRACK_SPEED);
-      else setVel(body, 0, 0);
+      if (ctx.mark) moveToward(body, ctx.self, markingSpot(ctx.mark, ctx.attackDir), TRACK_SPEED, n, stam);
+      else if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, TRACK_SPEED, n, stam);
+      else body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
       return { kind: "none", phase };
     }
     case "intercept": {
-      // Step 36/37 — run to where the ball (or pass) will be.
       const aim = ctx.passTarget ?? ctx.mark ?? ctx.carrier ?? ctx.ball;
       const t = timeToNearPoint(ctx.ball, ctx.ballVel, aim);
       const future = predictBallPosition(ctx.ball, ctx.ballVel, Math.max(0.25, t));
-      moveToward(body, ctx.self, future, INTERCEPT_SPEED * pressMul);
+      moveToward(body, ctx.self, future, INTERCEPT_SPEED * pressMul, n, stam);
       return { kind: "none", phase };
     }
     case "press": {
       if (ctx.carrier) {
-        const futureCarrier = {
-          x: ctx.carrier.x + (ctx.ballVel.x > 0 ? 0 : 0),
-          z: ctx.carrier.z,
-        };
-        moveToward(body, ctx.self, futureCarrier, PRESS_SPEED * pressMul);
+        moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED * pressMul, n, stam);
       } else {
         const future = predictBallPosition(ctx.ball, ctx.ballVel, 0.35);
-        moveToward(body, ctx.self, future, PRESS_SPEED * pressMul);
+        moveToward(body, ctx.self, future, PRESS_SPEED * pressMul, n, stam);
       }
       return { kind: "none", phase };
     }
     case "tackle": {
-      if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED * pressMul);
+      if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED * pressMul, n, stam);
       return { kind: "tackle", phase: "tackle" };
     }
     case "recover": {
@@ -148,7 +144,7 @@ export const stepDefendAI = (
         shapePhaseFor(ownHas, oppHas),
         ctx.tactics,
       );
-      moveToward(body, ctx.self, target, RECOVER_SPEED);
+      moveToward(body, ctx.self, target, RECOVER_SPEED, n, stam);
       return { kind: "none", phase };
     }
   }

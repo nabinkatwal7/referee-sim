@@ -27,11 +27,13 @@ import {
 } from "../../entities/Ball/possession";
 import type { Role } from "../../entities/formation";
 import { detectPlayerCollisions } from "../../entities/Player/collisionDetector";
+import { resolveOverlaps } from "../../entities/Player/avoidance";
 import {
   createGoalkeeperAIState,
   type GoalkeeperAIState,
   type KeeperFSMState,
 } from "../../entities/Player/goalkeeper";
+import { stepStamina } from "../../entities/Player/stamina";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
 import { expirePendingFoul } from "../referee/whistle";
@@ -226,6 +228,8 @@ export class GameLoop {
       this.updatePhysics();
       this.updateBall(delta);
       this.updateCollisions();
+      // Final pass: steering repulsion so nobody stacks.
+      resolveOverlaps(this.players.map((p) => p?.body ?? null));
     }
 
     this.updateReferee();
@@ -339,14 +343,28 @@ export class GameLoop {
       this.clockWholeSecond = whole;
       gameStateStore.getState().setTime(whole);
     }
+    // Step 40 — minute / second / added time / period labels.
+    gameStateStore.getState().setMatchClock(this.matchState.getClock());
   }
 
   private updateAI(delta: number) {
-    this.players.forEach((player) => {
+    const positions = this.players.map((p) => {
+      if (!p) return null;
+      const t = p.body.translation();
+      return { x: t.x, z: t.z };
+    });
+
+    this.players.forEach((player, i) => {
       if (!player) return;
-      // Keepers run exclusively via stepGoalkeeper inside the brain.
-      if (player.role === "GK") return;
-      stepPlayerAI(player.body, player.ai, delta);
+      if (player.role === "GK") {
+        const v = player.body.linvel();
+        stepStamina(player.ai.stamina, Math.hypot(v.x, v.z), delta);
+        return;
+      }
+      const neighbors = positions
+        .map((pos, j) => (j !== i ? pos : null))
+        .filter((p): p is { x: number; z: number } => !!p);
+      stepPlayerAI(player.body, player.ai, delta, neighbors);
     });
   }
 

@@ -1,16 +1,6 @@
 import { MatchState } from "../../engine/match/MatchStateMachine";
 import { useGameStore } from "./useGameState";
 
-const formatClock = (seconds: number) => {
-  const m = Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const s = Math.floor(seconds % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${m}:${s}`;
-};
-
 const PHASE_LABEL: Partial<Record<MatchState, string>> = {
   [MatchState.KICKOFF]: "KICKOFF",
   [MatchState.GOAL]: "GOAL!",
@@ -20,7 +10,7 @@ const PHASE_LABEL: Partial<Record<MatchState, string>> = {
 
 const HUD = () => {
   const score = useGameStore((state) => state.score);
-  const time = useGameStore((state) => state.time);
+  const matchClock = useGameStore((state) => state.matchClock);
   const currentEvent = useGameStore((state) => state.currentEvent);
   const paused = useGameStore((state) => state.paused);
   const rating = useGameStore((state) => state.rating);
@@ -30,6 +20,12 @@ const HUD = () => {
   const matchPhase = useGameStore((state) => state.matchPhase);
 
   const phaseLabel = PHASE_LABEL[matchPhase];
+  const addedHint =
+    matchClock.addedTime > 0 && !matchClock.inAddedTime && matchClock.periodLabel
+      ? ` (+${matchClock.addedTime})`
+      : matchClock.inAddedTime
+        ? `  +${matchClock.addedTime}`
+        : "";
 
   return (
     <div
@@ -45,7 +41,10 @@ const HUD = () => {
       }}
     >
       <div>
-        {score.home} - {score.away} &nbsp; {formatClock(time)} &nbsp; Rating: {rating.toFixed(1)}{" "}
+        {score.home} - {score.away} &nbsp; {matchClock.display}
+        {matchClock.periodLabel ? ` · ${matchClock.periodLabel}` : ""}
+        {addedHint}
+        &nbsp; Rating: {rating.toFixed(1)}{" "}
         {paused && matchPhase !== MatchState.PAUSED && "(PAUSED)"}
       </div>
       {phaseLabel && (

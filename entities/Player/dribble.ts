@@ -1,5 +1,6 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { Pos2 } from "../Ball/nearestPlayer";
+import { applySteering } from "./avoidance";
 
 // Step 28 — Dribbling. Simple steering: ball slightly ahead, avoid defenders, move.
 
@@ -18,7 +19,6 @@ export const dribbleSteer = (
   attackDir: 1 | -1,
   defenders: Pos2[],
 ): Pos2 => {
-  // Base: toward opponent goal (center).
   let dx = -self.x * 0.15;
   let dz = attackDir;
 
@@ -38,7 +38,6 @@ export const dribbleSteer = (
 export const canDribble = (nearestDefenderDist: number): boolean =>
   nearestDefenderDist > 2.5;
 
-// Advance when we can't safely dribble — still move toward goal, less avoid.
 export const moveSteer = (self: Pos2, attackDir: 1 | -1): Pos2 =>
   normalize(-self.x * 0.1, attackDir);
 
@@ -46,9 +45,9 @@ export const applySteer = (
   body: RapierRigidBody,
   steer: Pos2,
   speed: number = DRIBBLE_SPEED,
+  neighbors: Pos2[] = [],
 ) => {
-  const linvel = body.linvel();
-  body.setLinvel({ x: steer.x * speed, y: linvel.y, z: steer.z * speed }, true);
+  applySteering(body, steer, speed, neighbors);
 };
 
 export const carryBallAhead = (

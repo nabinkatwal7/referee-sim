@@ -1,3 +1,11 @@
+import {
+  addedDisplayToWall,
+  createMatchClockSnapshot,
+  HALF_DURATION_SECONDS,
+  snapshotClock,
+  type MatchClockSnapshot,
+} from "./MatchClock";
+
 // Real TS `enum`s aren't allowed under this project's erasableSyntaxOnly
 // tsconfig setting (they emit runtime code) — this const-object + derived
 // type is the erasable equivalent; every call site (MatchState.KICKOFF etc.)
@@ -18,18 +26,11 @@ export type MatchState = (typeof MatchState)[keyof typeof MatchState];
 export type MatchHalf = "first" | "second";
 export type StateListener = (state: MatchState, previous: MatchState) => void;
 
-// Arcade-length timings, not real 45-minute halves — this is a simulation,
-// not a broadcast. Tune freely.
-const KICKOFF_DELAY = 2; // seconds standing at kickoff before play starts
+const KICKOFF_DELAY = 2;
 const GOAL_CELEBRATION_DURATION = 3;
 const HALF_TIME_DURATION = 5;
-const HALF_DURATION = 90; // seconds of actual play per half
+const HALF_DURATION = HALF_DURATION_SECONDS;
 
-// The single authority for "what is happening right now" — nothing else
-// decides this independently. GameLoop reads `current`/`isPlaying()` to
-// gate simulation, and subscribes to transitions to trigger side effects
-// (reset positions on kickoff, flip attacking direction after half-time).
-// Pure engine: no React, no store — just an enum, a timer, and listeners.
 export class MatchStateMachine {
   private state: MatchState = MatchState.PRE_MATCH;
   private prePauseState: MatchState = MatchState.PRE_MATCH;
@@ -37,6 +38,11 @@ export class MatchStateMachine {
   private halfPlayClock = 0;
   private half: MatchHalf = "first";
   private listeners: StateListener[] = [];
+
+  // Stoppage: awarded when regular half time hits, then play continues.
+  private addedTimeMinutes = 0;
+  private inAddedTime = false;
+  private addedElapsed = 0;
 
   get current(): MatchState {
     return this.state;
@@ -48,6 +54,28 @@ export class MatchStateMachine {
 
   isPlaying(): boolean {
     return this.state === MatchState.IN_PLAY || this.state === MatchState.SECOND_HALF;
+  }
+
+  getClock(): MatchClockSnapshot {
+    const period =
+      this.state === MatchState.HALF_TIME
+        ? "half_time"
+        : this.state === MatchState.FULL_TIME
+          ? "full_time"
+          : this.state === MatchState.PRE_MATCH
+            ? "pre"
+            : this.half === "second"
+              ? "second"
+              : "first";
+
+    return snapshotClock({
+      period,
+      halfPlaySeconds: this.halfPlayClock,
+      halfIsSecond: this.half === "second",
+      addedTime: this.addedTimeMinutes,
+      inAddedTime: this.inAddedTime,
+      addedElapsed: this.addedElapsed,
+    });
   }
 
   subscribe(listener: StateListener): () => void {
@@ -75,13 +103,15 @@ export class MatchStateMachine {
     this.transition(this.prePauseState);
   }
 
-  // A goal was scored (called by GameLoop when a GoalEvent fires).
   reportGoal() {
     if (this.isPlaying()) this.transition(MatchState.GOAL);
   }
 
-  // Called once per tick with real elapsed time. Not gated by isPlaying()
-  // itself — this is what DECIDES whether we're playing.
+  /** Roll / bump stoppage minutes (e.g. after fouls). Min 1 when half expires. */
+  awardAddedTime(minutes: number) {
+    this.addedTimeMinutes = Math.max(this.addedTimeMinutes, Math.ceil(minutes));
+  }
+
   update(delta: number) {
     this.timer += delta;
 
@@ -98,11 +128,7 @@ export class MatchStateMachine {
 
       case MatchState.IN_PLAY:
       case MatchState.SECOND_HALF:
-        this.halfPlayClock += delta;
-        if (this.halfPlayClock >= HALF_DURATION) {
-          this.halfPlayClock = 0;
-          this.transition(this.half === "first" ? MatchState.HALF_TIME : MatchState.FULL_TIME);
-        }
+        this.tickPlay(delta);
         break;
 
       case MatchState.GOAL:
@@ -114,14 +140,51 @@ export class MatchStateMachine {
       case MatchState.HALF_TIME:
         if (this.timer >= HALF_TIME_DURATION) {
           this.half = "second";
+          this.resetHalfClocks();
           this.transition(MatchState.KICKOFF);
         }
         break;
 
       case MatchState.FULL_TIME:
       case MatchState.PAUSED:
-        // Terminal / externally driven — nothing to do here.
         break;
     }
   }
+
+  private resetHalfClocks() {
+    this.halfPlayClock = 0;
+    this.addedTimeMinutes = 0;
+    this.inAddedTime = false;
+    this.addedElapsed = 0;
+  }
+
+  private endHalf() {
+    this.resetHalfClocks();
+    this.transition(this.half === "first" ? MatchState.HALF_TIME : MatchState.FULL_TIME);
+  }
+
+  private tickPlay(delta: number) {
+    if (!this.inAddedTime) {
+      this.halfPlayClock += delta;
+      if (this.halfPlayClock < HALF_DURATION) return;
+
+      // Enter stoppage. Default 1–3 display minutes if nothing awarded yet.
+      if (this.addedTimeMinutes <= 0) {
+        this.addedTimeMinutes = 1 + Math.floor(Math.random() * 3);
+      }
+      this.inAddedTime = true;
+      this.halfPlayClock = HALF_DURATION;
+      this.addedElapsed = 0;
+      return;
+    }
+
+    this.addedElapsed += delta;
+    if (this.addedElapsed >= addedDisplayToWall(this.addedTimeMinutes)) {
+      this.endHalf();
+    }
+  }
 }
+
+// Re-export for callers that only need the empty snapshot type.
+export { createMatchClockSnapshot };
+export type { MatchClockSnapshot };

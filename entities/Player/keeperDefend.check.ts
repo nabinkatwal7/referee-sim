@@ -23,6 +23,7 @@ assert.equal(
     hasBallTeam: "away",
     ownTeam: "home",
     tactics: DEFAULT_TACTICS,
+    neighbors: [],
   }),
   "press",
 );
@@ -40,6 +41,7 @@ assert.equal(
     hasBallTeam: "away",
     ownTeam: "home",
     tactics: DEFAULT_TACTICS,
+    neighbors: [],
   }),
   "tackle",
 );
@@ -57,6 +59,7 @@ assert.equal(
     hasBallTeam: "home",
     ownTeam: "home",
     tactics: DEFAULT_TACTICS,
+    neighbors: [],
   }),
   "recover",
 );
