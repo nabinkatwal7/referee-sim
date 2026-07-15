@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   FORMATIONS,
+  FORMATION_4_3_3,
   phasePositionsForHome,
   homePositionForSlot,
 } from "../formation";
@@ -11,12 +12,17 @@ import { dynamicShapeTarget } from "./positioning";
 import { DEFAULT_TACTICS } from "./tactics";
 
 for (const id of ["4-4-2", "4-3-3", "3-5-2", "5-3-2"] as const) {
-  assert.equal(FORMATIONS[id].length, 11, `${id} should have 11 slots`);
+  assert.equal(FORMATIONS[id].slots.length, 11, `${id} should have 11 slots`);
 }
 
-const home = homePositionForSlot({ role: "ST", x: 0, forward: 50 }, "A");
+const stHome = homePositionForSlot(FORMATION_4_3_3.slots.find((s) => s.role === "ST")!, "A");
+assert.ok(stHome[2] < -5, "ST starts well clear of center circle");
+assert.ok(stHome[2] > -20, "ST still high up own half");
+
+const home = homePositionForSlot({ role: "ST", x: 0, forward: 46 }, "A");
 const phases = phasePositionsForHome(home, "ST", 1);
 assert.ok(phases.attack[2] > phases.home[2], "attack sits higher up the pitch");
+assert.ok(phases.attack[2] > 5, "attack ST pushes into opponent half");
 assert.ok(phases.defend[2] < phases.home[2], "defend drops deeper");
 
 const slid = dynamicShapeTarget(

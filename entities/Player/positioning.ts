@@ -33,8 +33,9 @@ export const dynamicShapeTarget = (
   const slideX =
     ball.x * (0.15 + tactics.width * 0.35) * (1 - tactics.compactness * 0.4);
 
-  // Depth slide: block drifts toward the ball along the pitch.
-  const along = (ball.z - anchors.home.z) * (0.1 + tactics.depth * 0.25);
+  // Soft depth slide — clamp so recover never yanks the whole team to midfield.
+  const alongRaw = (ball.z - anchors.home.z) * (0.04 + tactics.depth * 0.1);
+  const along = Math.max(-8, Math.min(8, alongRaw));
   // Line height pushes the whole unit upfield when high.
   const linePush = attackDir * (tactics.lineHeight - 0.5) * 8;
 

@@ -24,6 +24,7 @@ assert.equal(
     ownTeam: "home",
     tactics: DEFAULT_TACTICS,
     neighbors: [],
+    allowChase: true,
   }),
   "press",
 );
@@ -42,6 +43,7 @@ assert.equal(
     ownTeam: "home",
     tactics: DEFAULT_TACTICS,
     neighbors: [],
+    allowChase: true,
   }),
   "tackle",
 );
@@ -50,18 +52,20 @@ assert.equal(
   chooseDefendPhase({
     self: { x: 0, z: 0 },
     anchors,
-    ball: { x: 0, z: 10 },
+    ball: { x: 2, z: 2 },
     ballVel: { x: 0, z: 0 },
-    carrier: { x: 0, z: 10 },
+    carrier: { x: 2, z: 2 },
     passTarget: null,
-    mark: null,
+    mark: { x: 2, z: 2 },
     attackDir: 1,
-    hasBallTeam: "home",
+    hasBallTeam: "away",
     ownTeam: "home",
     tactics: DEFAULT_TACTICS,
     neighbors: [],
+    allowChase: false,
   }),
-  "recover",
+  "track",
+  "non-chasers hold mark instead of swarming",
 );
 
 const mark = pickMarkTarget(

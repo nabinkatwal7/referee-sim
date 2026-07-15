@@ -36,6 +36,8 @@ export type DefendContext = {
   ownTeam: TeamId;
   tactics: TacticalParams;
   neighbors: Pos2[];
+  /** Only the closest few teammates may press / intercept the ball. */
+  allowChase: boolean;
 };
 
 export type DefendResult =
@@ -68,11 +70,11 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
 
   if (opponentHasBall && ctx.carrier) {
     const distCarrier = Math.hypot(ctx.carrier.x - ctx.self.x, ctx.carrier.z - ctx.self.z);
-    if (distCarrier < TACKLE_RANGE) return "tackle";
-    if (distCarrier < pressDist) return "press";
+    if (ctx.allowChase && distCarrier < TACKLE_RANGE) return "tackle";
+    if (ctx.allowChase && distCarrier < pressDist) return "press";
     // Step 37 — pass in flight toward mark → intercept.
-    if (ctx.passTarget && ballSpeed > 3) return "intercept";
-    if (ctx.mark && ballSpeed > 3) {
+    if (ctx.allowChase && ctx.passTarget && ballSpeed > 3) return "intercept";
+    if (ctx.allowChase && ctx.mark && ballSpeed > 3) {
       const closing =
         (ctx.ballVel.x * (ctx.mark.x - ctx.ball.x) +
           ctx.ballVel.z * (ctx.mark.z - ctx.ball.z)) /
@@ -85,7 +87,7 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
   if (loose) {
     const future = predictBallPosition(ctx.ball, ctx.ballVel, 0.5);
     const distBall = Math.hypot(future.x - ctx.self.x, future.z - ctx.self.z);
-    if (distBall < 12 && ballSpeed > 2) return "intercept";
+    if (ctx.allowChase && distBall < 12 && ballSpeed > 2) return "intercept";
     return "recover";
   }
 
@@ -98,9 +100,10 @@ export const stepDefendAI = (
   ctx: DefendContext,
 ): DefendResult => {
   const phase = chooseDefendPhase(ctx);
-  if (phase === "press") ai.fsmState = "press";
+  // ponytail: keep tackle as press-driven until enterReactionState wins the ball —
+  // setting "tackle" here with timer 0 freezes the runner every frame in FREEZE_STATES.
+  if (phase === "press" || phase === "tackle" || phase === "intercept") ai.fsmState = "press";
   else if (phase === "recover") ai.fsmState = "recover";
-  else if (phase === "tackle") ai.fsmState = "tackle";
   else ai.fsmState = "move";
 
   const pressMul = 0.85 + ctx.tactics.pressing * 0.4;

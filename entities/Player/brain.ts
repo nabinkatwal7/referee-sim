@@ -455,6 +455,26 @@ const stepFieldDefense = (
 
   let tackleEvent: MatchEvent | null = null;
 
+  // Only closest 2 outfielders per team chase the ball — rest hold shape.
+  const chaseFocus = carrierPos ?? ballXZ;
+  const byTeam = new Map<string, { i: number; dist: number }[]>();
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (!p || isGK(p) || i === state.possessor) continue;
+    const self = posOf(p);
+    const dist = Math.hypot(self.x - chaseFocus.x, self.z - chaseFocus.z);
+    const list = byTeam.get(p.team.id) ?? [];
+    list.push({ i, dist });
+    byTeam.set(p.team.id, list);
+  }
+  const chasers = new Set<number>();
+  for (const list of byTeam.values()) {
+    list
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 2)
+      .forEach((e) => chasers.add(e.i));
+  }
+
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
     if (!p || isGK(p)) continue;
@@ -500,6 +520,7 @@ const stepFieldDefense = (
       ownTeam: p.team.id,
       tactics: p.team.tactics,
       neighbors: neighborPos,
+      allowChase: chasers.has(i),
     });
 
     if (

@@ -1,90 +1,98 @@
-import { PITCH_LENGTH } from "../components/game/pitchDimensions";
+// Formation shapes — pitch is 105 long × 68 wide; goal lines at z = ±52.5.
+// `forward` is meters FROM OWN GOAL LINE toward the opponent.
 
-export type Role =
-  | "GK"
-  | "LB"
-  | "CB"
-  | "RB"
-  | "CDM"
-  | "CM"
-  | "CAM"
-  | "LW"
-  | "RW"
-  | "ST"
-  | "LM"
-  | "RM"
-  | "LWB"
-  | "RWB";
-
-export type FormationId = "4-4-2" | "4-3-3" | "3-5-2" | "5-3-2";
-
-export type FormationSlot = {
-  role: Role;
-  x: number; // lateral offset from center, meters
-  forward: number; // meters from own goal line toward halfway
-};
+import type { Role } from "./Player/stats";
 
 export type Side = "A" | "B";
 
-const OWN_GOAL_LINE = PITCH_LENGTH / 2;
+export type FormationName = "4-4-2" | "4-3-3" | "3-5-2" | "5-3-2";
 
-export const FORMATION_4_3_3: FormationSlot[] = [
-  { role: "GK", x: 0, forward: 5 },
-  { role: "LB", x: -22, forward: 19 },
-  { role: "CB", x: -7, forward: 17 },
-  { role: "CB", x: 7, forward: 17 },
-  { role: "RB", x: 22, forward: 19 },
-  { role: "CDM", x: 0, forward: 30 },
-  { role: "CM", x: -13, forward: 40 },
-  { role: "CM", x: 13, forward: 40 },
-  { role: "LW", x: -20, forward: 49 },
-  { role: "ST", x: 0, forward: 51 },
-  { role: "RW", x: 20, forward: 49 },
-];
+export type FormationSlot = {
+  role: Role;
+  /** Lateral offset from pitch center (meters). Neg = left. */
+  x: number;
+  /** Distance from own goal line toward opponent. */
+  forward: number;
+};
 
-export const FORMATION_4_4_2: FormationSlot[] = [
-  { role: "GK", x: 0, forward: 5 },
-  { role: "LB", x: -22, forward: 19 },
-  { role: "CB", x: -7, forward: 17 },
-  { role: "CB", x: 7, forward: 17 },
-  { role: "RB", x: 22, forward: 19 },
-  { role: "LM", x: -20, forward: 36 },
-  { role: "CM", x: -8, forward: 34 },
-  { role: "CM", x: 8, forward: 34 },
-  { role: "RM", x: 20, forward: 36 },
-  { role: "ST", x: -6, forward: 50 },
-  { role: "ST", x: 6, forward: 50 },
-];
+export type Formation = {
+  name: FormationName;
+  slots: FormationSlot[];
+};
 
-export const FORMATION_3_5_2: FormationSlot[] = [
-  { role: "GK", x: 0, forward: 5 },
-  { role: "CB", x: -10, forward: 17 },
-  { role: "CB", x: 0, forward: 16 },
-  { role: "CB", x: 10, forward: 17 },
-  { role: "LWB", x: -24, forward: 32 },
-  { role: "CDM", x: 0, forward: 30 },
-  { role: "CM", x: -10, forward: 38 },
-  { role: "CM", x: 10, forward: 38 },
-  { role: "RWB", x: 24, forward: 32 },
-  { role: "ST", x: -6, forward: 50 },
-  { role: "ST", x: 6, forward: 50 },
-];
+const HALF_LEN = 52.5;
+const OWN_GOAL_LINE = HALF_LEN;
 
-export const FORMATION_5_3_2: FormationSlot[] = [
-  { role: "GK", x: 0, forward: 5 },
-  { role: "LWB", x: -24, forward: 22 },
-  { role: "CB", x: -12, forward: 16 },
-  { role: "CB", x: 0, forward: 15 },
-  { role: "CB", x: 12, forward: 16 },
-  { role: "RWB", x: 24, forward: 22 },
-  { role: "CM", x: -10, forward: 34 },
-  { role: "CDM", x: 0, forward: 32 },
-  { role: "CM", x: 10, forward: 34 },
-  { role: "ST", x: -6, forward: 50 },
-  { role: "ST", x: 6, forward: 50 },
-];
+/** Kickoff / base shape — depth into OWN half so attackers aren't glued to center circle. */
+export const FORMATION_4_4_2: Formation = {
+  name: "4-4-2",
+  slots: [
+    { role: "GK", x: 0, forward: 1 },
+    { role: "LB", x: -22, forward: 18 },
+    { role: "CB", x: -7, forward: 14 },
+    { role: "CB", x: 7, forward: 14 },
+    { role: "RB", x: 22, forward: 18 },
+    { role: "LM", x: -24, forward: 32 },
+    { role: "CM", x: -8, forward: 30 },
+    { role: "CM", x: 8, forward: 30 },
+    { role: "RM", x: 24, forward: 32 },
+    { role: "ST", x: -6, forward: 42 },
+    { role: "ST", x: 6, forward: 42 },
+  ],
+};
 
-export const FORMATIONS: Record<FormationId, FormationSlot[]> = {
+export const FORMATION_4_3_3: Formation = {
+  name: "4-3-3",
+  slots: [
+    { role: "GK", x: 0, forward: 1 },
+    { role: "LB", x: -22, forward: 18 },
+    { role: "CB", x: -7, forward: 14 },
+    { role: "CB", x: 7, forward: 14 },
+    { role: "RB", x: 22, forward: 18 },
+    { role: "CDM", x: 0, forward: 28 },
+    { role: "CM", x: -10, forward: 34 },
+    { role: "CM", x: 10, forward: 34 },
+    { role: "LW", x: -22, forward: 44 },
+    { role: "ST", x: 0, forward: 46 },
+    { role: "RW", x: 22, forward: 44 },
+  ],
+};
+
+export const FORMATION_3_5_2: Formation = {
+  name: "3-5-2",
+  slots: [
+    { role: "GK", x: 0, forward: 1 },
+    { role: "CB", x: -10, forward: 14 },
+    { role: "CB", x: 0, forward: 12 },
+    { role: "CB", x: 10, forward: 14 },
+    { role: "LWB", x: -26, forward: 30 },
+    { role: "CDM", x: 0, forward: 26 },
+    { role: "CM", x: -9, forward: 34 },
+    { role: "CM", x: 9, forward: 34 },
+    { role: "RWB", x: 26, forward: 30 },
+    { role: "ST", x: -6, forward: 44 },
+    { role: "ST", x: 6, forward: 44 },
+  ],
+};
+
+export const FORMATION_5_3_2: Formation = {
+  name: "5-3-2",
+  slots: [
+    { role: "GK", x: 0, forward: 1 },
+    { role: "LWB", x: -26, forward: 22 },
+    { role: "CB", x: -12, forward: 12 },
+    { role: "CB", x: 0, forward: 11 },
+    { role: "CB", x: 12, forward: 12 },
+    { role: "RWB", x: 26, forward: 22 },
+    { role: "CM", x: -10, forward: 30 },
+    { role: "CDM", x: 0, forward: 28 },
+    { role: "CM", x: 10, forward: 30 },
+    { role: "ST", x: -6, forward: 42 },
+    { role: "ST", x: 6, forward: 42 },
+  ],
+};
+
+export const FORMATIONS: Record<FormationName, Formation> = {
   "4-4-2": FORMATION_4_4_2,
   "4-3-3": FORMATION_4_3_3,
   "3-5-2": FORMATION_3_5_2,
@@ -94,37 +102,37 @@ export const FORMATIONS: Record<FormationId, FormationSlot[]> = {
 /** Extra meters toward the opponent goal when the team is attacking. */
 const ATTACK_PUSH: Partial<Record<Role, number>> = {
   GK: 0,
-  CB: 2,
-  LB: 4,
-  RB: 4,
-  LWB: 6,
-  RWB: 6,
-  CDM: 5,
-  CM: 7,
-  CAM: 9,
-  LM: 6,
-  RM: 6,
-  LW: 7,
-  RW: 7,
-  ST: 5,
+  CB: 6,
+  LB: 12,
+  RB: 12,
+  LWB: 16,
+  RWB: 16,
+  CDM: 10,
+  CM: 14,
+  CAM: 20,
+  LM: 14,
+  RM: 14,
+  LW: 22,
+  RW: 22,
+  ST: 26,
 };
 
 /** Extra meters toward own goal when defending. */
 const DEFEND_DROP: Partial<Record<Role, number>> = {
   GK: 0,
-  CB: 1,
-  LB: 2,
-  RB: 2,
-  LWB: 3,
-  RWB: 3,
-  CDM: 4,
-  CM: 6,
-  CAM: 8,
-  LM: 5,
-  RM: 5,
-  LW: 8,
-  RW: 8,
-  ST: 10,
+  CB: 4,
+  LB: 6,
+  RB: 6,
+  LWB: 8,
+  RWB: 8,
+  CDM: 8,
+  CM: 10,
+  CAM: 12,
+  LM: 10,
+  RM: 10,
+  LW: 14,
+  RW: 14,
+  ST: 16,
 };
 
 export const homePositionForSlot = (
@@ -146,8 +154,8 @@ export const phasePositionsForHome = (
   attack: [number, number, number];
   defend: [number, number, number];
 } => {
-  const push = ATTACK_PUSH[role] ?? 5;
-  const drop = DEFEND_DROP[role] ?? 5;
+  const push = ATTACK_PUSH[role] ?? 12;
+  const drop = DEFEND_DROP[role] ?? 8;
   return {
     home,
     attack: [home[0], home[1], home[2] + attackDir * push],
