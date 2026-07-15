@@ -24,6 +24,8 @@ const describe = (event: MatchEvent): string => {
       return `Goal kick: team ${event.team}`;
     case "kickoff":
       return "Kickoff";
+    case "advantageExpired":
+      return "Advantage over";
     case "foul":
       return event.given
         ? `FOUL given: #${event.by} on #${event.against}`
@@ -86,6 +88,7 @@ export const wireStoreToEvents = (bus: EventBus) => {
       case "kickoff":
         store.setPossession(null);
         break;
+      case "advantageExpired":
       case "collision":
         break;
     }

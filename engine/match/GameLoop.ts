@@ -48,7 +48,18 @@ import { enterReactionState } from "../../entities/Player/ai";
 import { stepStamina } from "../../entities/Player/stamina";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
-import { expirePendingFoul } from "../referee/whistle";
+import { expirePendingFoul, makeDecision } from "../referee/whistle";
+import type { DecisionAction } from "../referee/decision";
+import { createCardBook } from "../referee/cards";
+import {
+  applyAssistantSignal,
+  createAssistants,
+  recommendOffside,
+  recommendRestart,
+  type AssistantState,
+} from "../referee/assistants";
+import { createVarState, enqueueVar, type VarState } from "../referee/var";
+import { progressCareer } from "../referee/career";
 import { createTeams } from "../team/createTeams";
 import { Team, type TeamId } from "../team/Team";
 import { EventBus } from "./EventBus";
@@ -129,6 +140,9 @@ export class GameLoop {
   private replayElapsed = 0;
   private homeTeam: Team;
   private awayTeam: Team;
+  private cardBook = createCardBook();
+  private assistants: AssistantState = createAssistants();
+  private varReviews: VarState = createVarState();
   readonly matchState = new MatchStateMachine();
   readonly bus = new EventBus();
 
@@ -147,6 +161,30 @@ export class GameLoop {
         this.resetForKickoff();
         this.bus.emit({ kind: "kickoff", at: this.clock });
       }
+      if (state === MatchState.FULL_TIME) {
+        const career = progressCareer(
+          gameStateStore.getState().career,
+          gameStateStore.getState().matchRating.overall,
+        );
+        gameStateStore.getState().setCareer(career);
+        gameStateStore.getState().setCurrentEvent(
+          `Full time — career: ${career.tier} (${career.matchesCompleted} matches)`,
+        );
+      }
+    });
+  }
+
+  resolveRefereeDecision(action: DecisionAction) {
+    makeDecision(action, this.matchState, {
+      cardBook: this.cardBook,
+      onDisciplinary: (playerIndex, sentOff) => {
+        if (!sentOff) return;
+        const p = this.players[playerIndex];
+        if (p) {
+          p.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          p.ai.fsmState = "idle";
+        }
+      },
     });
   }
 
@@ -467,7 +505,15 @@ export class GameLoop {
       const by = this.touchLog.last?.playerIndex ?? this.ballPossession.lastTouch?.playerIndex ?? 0;
       this.getTeam(out.team).addGoal();
       this.bus.emit({ kind: "goal", by, team: out.team, at });
-      // Celebrate briefly for the scorer if we know them.
+      enqueueVar(this.varReviews, {
+        kind: "goal",
+        team: out.team,
+        playerA: by,
+        position: out.position,
+        at,
+        cameras: ["main", "goalLine", "sideline", "tactical"],
+      });
+      gameStateStore.getState().setVarState({ ...this.varReviews });
       const scorer = this.players[by];
       if (scorer) enterReactionState(scorer.ai, "celebrate", 3);
       this.brain = createBrainState();
@@ -475,6 +521,13 @@ export class GameLoop {
       this.matchState.reportGoal();
       return;
     }
+
+    // Step 56 — AR flags the restart.
+    applyAssistantSignal(
+      this.assistants,
+      recommendRestart(out.kind, out.team, out.position, at),
+    );
+    gameStateStore.getState().setAssistants({ ...this.assistants });
 
     this.bus.emit({ ...out, at });
     this.brain = createBrainState();
@@ -564,6 +617,11 @@ export class GameLoop {
       case "offside": {
         const vision = this.evaluateVision(result.position);
         const given = decideCall(vision);
+        applyAssistantSignal(
+          this.assistants,
+          recommendOffside(result.team, result.position, at, vision.quality),
+        );
+        gameStateStore.getState().setAssistants({ ...this.assistants });
         this.bus.emit({ ...result, given, visionQuality: vision.quality, at });
         if (!given) this.lastTouchTeam = result.team;
         break;
@@ -573,23 +631,32 @@ export class GameLoop {
 
   private updateCollisions() {
     if (!this.ball || this.restart) return;
-    // Only one incident under review at a time — don't bother detecting
-    // more while one's still awaiting the player's whistle.
-    if (gameStateStore.getState().pendingFoul) return;
+    if (gameStateStore.getState().pendingFoul || gameStateStore.getState().advantage) return;
 
     const ballPos = this.ball.translation();
     const candidate = detectPlayerCollisions(this.players, ballPos);
     if (!candidate) return;
 
     const vision = this.evaluateVision(candidate.position);
+    // Step 51 — only flag if the ref can reasonably see it (or quality mid+).
+    if (!vision.inView && vision.quality < 0.2) return;
+
     this.bus.emit({
       kind: "possibleFoul",
       playerA: candidate.playerA,
       playerB: candidate.playerB,
       position: candidate.position,
       force: candidate.force,
+      foulScore: candidate.foulScore,
       severity: candidate.severity,
       visionQuality: vision.quality,
+      tackle: {
+        speed: candidate.tackle.speed,
+        angle: candidate.tackle.angle,
+        force: candidate.tackle.force,
+        ballTouched: candidate.tackle.ballTouched,
+        legTouched: candidate.tackle.legTouched,
+      },
       at: this.clock,
     });
   }
@@ -599,12 +666,23 @@ export class GameLoop {
   }
 
   private evaluateVision(position: { x: number; z: number }): Vision {
-    if (!this.referee) return { inView: false, distance: Infinity, angle: Math.PI, quality: 0 };
+    if (!this.referee) {
+      return { inView: false, distance: Infinity, angle: Math.PI, obstructed: false, quality: 0 };
+    }
     const refPos = this.referee.body.translation();
     this.referee.camera.getWorldDirection(refereeDir);
     refereeDir.y = 0;
     refereeDir.normalize();
-    return computeVision(refPos, refereeDir, position);
+    const blockers = this.players
+      .map((p) => {
+        if (!p) return null;
+        const t = p.body.translation();
+        // Don't count players right on the incident as blockers.
+        if (Math.hypot(t.x - position.x, t.z - position.z) < 1.5) return null;
+        return { x: t.x, z: t.z };
+      })
+      .filter((b): b is { x: number; z: number } => !!b);
+    return computeVision(refPos, refereeDir, position, blockers);
   }
 
   private updateReferee() {

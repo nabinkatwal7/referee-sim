@@ -1,6 +1,5 @@
 import type { GameLoop } from "../../engine/match/GameLoop";
 import type { DecisionAction } from "../../engine/referee/decision";
-import { makeDecision } from "../../engine/referee/whistle";
 import { useGameStore } from "./useGameState";
 
 const OPTIONS: { action: DecisionAction; label: string }[] = [
@@ -15,9 +14,6 @@ type Props = {
   gameLoop: GameLoop;
 };
 
-// The Whistle System's decision window: Space (see WhistleListener) pauses
-// the game and opens this; the player rules on the incident without being
-// shown its hidden severity — that's the whole point of the mechanic.
 const Whistle = ({ gameLoop }: Props) => {
   const open = useGameStore((state) => state.decisionWindowOpen);
   const foul = useGameStore((state) => state.pendingFoul);
@@ -43,11 +39,18 @@ const Whistle = ({ gameLoop }: Props) => {
         Incident: #{foul.playerA} vs #{foul.playerB}
       </div>
       <div style={{ opacity: 0.8, fontSize: 13 }}>What's the call?</div>
-      <div style={{ display: "flex", gap: "0.75rem" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: "0.75rem",
+          flexWrap: "wrap",
+          justifyContent: "center",
+        }}
+      >
         {OPTIONS.map(({ action, label }) => (
           <button
             key={action}
-            onClick={() => makeDecision(action, gameLoop.getMatchState())}
+            onClick={() => gameLoop.resolveRefereeDecision(action)}
             style={{
               padding: "0.6rem 1.2rem",
               fontSize: 15,

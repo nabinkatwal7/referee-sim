@@ -1,15 +1,13 @@
-import type { FoulSeverity } from "../../entities/Player/collisionDetector";
+import type { FoulSeverity } from "../../entities/Player/foulScore";
+import type { MatchRating } from "./rating";
+import { applyDecisionToRating, createMatchRating } from "./rating";
 
 export type DecisionAction = "playOn" | "advantage" | "foul" | "yellow" | "red";
 
-export const LATE_THRESHOLD = 4; // seconds between the incident and the whistle
-export const PENDING_TIMEOUT = 10; // seconds before an unacted-on incident auto-resolves
+export const LATE_THRESHOLD = 4;
+export const PENDING_TIMEOUT = 10;
 export const POSITIONING_QUALITY_THRESHOLD = 0.8;
-
-export const CORRECT_BONUS = 0.2;
-export const WRONG_PENALTY = -0.3;
-export const LATE_PENALTY = -0.1;
-export const POSITIONING_BONUS = 0.1;
+export const ADVANTAGE_WINDOW = 6; // seconds to return to foul if needed
 
 const CORRECT_ACTIONS: Record<FoulSeverity, DecisionAction[]> = {
   clean: ["playOn", "advantage"],
@@ -22,25 +20,32 @@ export type DecisionOutcome = {
   late: boolean;
   excellentPositioning: boolean;
   ratingDelta: number;
+  dimensions: MatchRating;
 };
 
-// Start at 10.0. Every decision: correct +, wrong -, late -, excellent
-// positioning +. Positioning is judged by the same vision-quality score used
-// to decide whether the referee sees fouls/offside at all (engine/referee/
-// vision.ts) — good camera work before the incident pays off here.
 export const scoreDecision = (
   severity: FoulSeverity,
   action: DecisionAction,
   reactionTime: number,
   visionQuality: number,
+  previous: MatchRating = createMatchRating(),
 ): DecisionOutcome => {
   const correct = CORRECT_ACTIONS[severity].includes(action);
   const late = reactionTime > LATE_THRESHOLD;
   const excellentPositioning = visionQuality >= POSITIONING_QUALITY_THRESHOLD;
 
-  let ratingDelta = correct ? CORRECT_BONUS : WRONG_PENALTY;
-  if (late) ratingDelta += LATE_PENALTY;
-  if (excellentPositioning) ratingDelta += POSITIONING_BONUS;
+  const dimensions = applyDecisionToRating(previous, {
+    correct,
+    late,
+    excellentPositioning,
+    visionQuality,
+  });
 
-  return { correct, late, excellentPositioning, ratingDelta };
+  return {
+    correct,
+    late,
+    excellentPositioning,
+    ratingDelta: dimensions.overall - previous.overall,
+    dimensions,
+  };
 };
