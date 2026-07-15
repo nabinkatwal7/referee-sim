@@ -53,11 +53,11 @@ const Game = () => {
             <Scene gameLoop={gameLoop} />
           </Physics>
           <GameLoopRunner gameLoop={gameLoop} />
-          <WhistleListener />
+          <WhistleListener gameLoop={gameLoop} />
           <ReplayListener gameLoop={gameLoop} />
         </Canvas>
         <HUD />
-        <Whistle />
+        <Whistle gameLoop={gameLoop} />
       </KeyboardControls>
     </div>
   );

@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import type { PossibleFoulEvent } from "./events";
+import { MatchState } from "./MatchStateMachine";
 
 export type Score = { home: number; away: number };
 export type Card = { playerIndex: number; type: "yellow" | "red" };
@@ -13,6 +14,7 @@ export type GameState = {
   currentEvent: string | null;
   replayState: ReplayState;
   paused: boolean;
+  matchPhase: MatchState; // mirror of GameLoop's MatchStateMachine, for display only
 
   // Whistle System (Phase 18) + Match Rating (Phase 19)
   pendingFoul: PossibleFoulEvent | null; // an incident awaiting the player's whistle
@@ -27,6 +29,7 @@ export type GameState = {
   setCurrentEvent: (event: string | null) => void;
   setReplayState: (state: ReplayState) => void;
   setPaused: (paused: boolean) => void;
+  setMatchPhase: (phase: MatchState) => void;
 
   setPendingFoul: (event: PossibleFoulEvent | null) => void;
   openDecisionWindow: (reactionTime: number) => void;
@@ -35,8 +38,9 @@ export type GameState = {
 };
 
 // Game state only — score, clock, cards, possession, the current event,
-// replay state, pause (plus the whistle/rating fields this feature needs).
-// Positions/physics belong to the engine (GameLoop), not here.
+// replay state, pause, match phase (plus the whistle/rating fields this
+// feature needs). Positions/physics belong to the engine (GameLoop), not
+// here.
 //
 // Architecture rule: the engine must not know React exists. This is built
 // with zustand/vanilla's createStore, which is a plain object with
@@ -53,6 +57,7 @@ export const gameStateStore = createStore<GameState>((set) => ({
   currentEvent: null,
   replayState: "live",
   paused: false,
+  matchPhase: MatchState.PRE_MATCH,
 
   pendingFoul: null,
   decisionWindowOpen: false,
@@ -66,6 +71,7 @@ export const gameStateStore = createStore<GameState>((set) => ({
   setCurrentEvent: (event) => set({ currentEvent: event }),
   setReplayState: (replayState) => set({ replayState }),
   setPaused: (paused) => set({ paused }),
+  setMatchPhase: (matchPhase) => set({ matchPhase }),
 
   setPendingFoul: (event) => set({ pendingFoul: event }),
   openDecisionWindow: (reactionTime) =>

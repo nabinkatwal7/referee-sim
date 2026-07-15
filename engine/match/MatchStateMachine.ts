@@ -1,13 +1,19 @@
-export enum MatchState {
-  PRE_MATCH = "PRE_MATCH",
-  KICKOFF = "KICKOFF",
-  IN_PLAY = "IN_PLAY",
-  GOAL = "GOAL",
-  HALF_TIME = "HALF_TIME",
-  SECOND_HALF = "SECOND_HALF",
-  FULL_TIME = "FULL_TIME",
-  PAUSED = "PAUSED",
-}
+// Real TS `enum`s aren't allowed under this project's erasableSyntaxOnly
+// tsconfig setting (they emit runtime code) — this const-object + derived
+// type is the erasable equivalent; every call site (MatchState.KICKOFF etc.)
+// works identically either way.
+export const MatchState = {
+  PRE_MATCH: "PRE_MATCH",
+  KICKOFF: "KICKOFF",
+  IN_PLAY: "IN_PLAY",
+  GOAL: "GOAL",
+  HALF_TIME: "HALF_TIME",
+  SECOND_HALF: "SECOND_HALF",
+  FULL_TIME: "FULL_TIME",
+  PAUSED: "PAUSED",
+} as const;
+
+export type MatchState = (typeof MatchState)[keyof typeof MatchState];
 
 export type MatchHalf = "first" | "second";
 export type StateListener = (state: MatchState, previous: MatchState) => void;

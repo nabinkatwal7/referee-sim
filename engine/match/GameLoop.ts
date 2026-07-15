@@ -12,7 +12,6 @@ import {
   stepMatchBrain,
   type BrainState,
   type MatchEvent as BrainEvent,
-  type Team,
 } from "../../entities/Player/brain";
 import { checkBoundary } from "../../entities/Ball/boundary";
 import { detectCollision } from "../../entities/Ball/collision";
@@ -20,8 +19,11 @@ import { detectPlayerCollisions } from "../../entities/Player/collisionDetector"
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
 import { expirePendingFoul } from "../referee/whistle";
+import { createTeams } from "../team/createTeams";
+import { Team, type TeamId } from "../team/Team";
 import { EventBus } from "./EventBus";
 import { gameStateStore } from "./gameState";
+import { MatchState, MatchStateMachine } from "./MatchStateMachine";
 import { ReplayBuffer, restoreSnapshot, type FrameSnapshot } from "./replay";
 import { wireStoreToEvents } from "./storeSync";
 
@@ -50,6 +52,13 @@ const toTuple = (v: { x: number; y: number; z: number }): [number, number, numbe
 // of being handled inline. The Zustand store (game state — score/time/cards/
 // possession/current event/replay/paused, no positions) subscribes to that
 // bus via wireStoreToEvents; GameLoop never writes to it directly.
+//
+// `matchState` (engine/match/MatchStateMachine.ts) is the single authority
+// on what phase the match is in — AI/ball/collision logic only run while
+// it's actually playing (IN_PLAY/SECOND_HALF); kickoff resets positions,
+// half-time flips each team's attacking direction, and the store's `paused`
+// flag is just a mirror of `!matchState.isPlaying()`, not an independent
+// source of truth.
 export class GameLoop {
   private clock = 0;
   private clockWholeSecond = -1;
@@ -57,16 +66,44 @@ export class GameLoop {
   private ball: RapierRigidBody | null = null;
   private referee: RefereeHandle | null = null;
   private brain: BrainState = createBrainState();
-  private lastTouchTeam: Team | null = null;
+  private lastTouchTeam: TeamId | null = null;
   private previousBallVelocity = { x: 0, z: 0 };
   private replayBuffer = new ReplayBuffer();
   private replayFrames: FrameSnapshot[] = [];
   private replayIndex = 0;
   private replayElapsed = 0;
+  private homeTeam: Team;
+  private awayTeam: Team;
+  readonly matchState = new MatchStateMachine();
   readonly bus = new EventBus();
 
   constructor() {
     wireStoreToEvents(this.bus);
+
+    const teams = createTeams();
+    this.homeTeam = teams.home;
+    this.awayTeam = teams.away;
+
+    this.matchState.subscribe((state, previous) => {
+      gameStateStore.getState().setMatchPhase(state);
+      gameStateStore.getState().setPaused(!this.matchState.isPlaying());
+      if (state === MatchState.KICKOFF) {
+        if (previous === MatchState.HALF_TIME) this.flipAttackingDirections();
+        this.resetForKickoff();
+      }
+    });
+  }
+
+  getTeams(): { home: Team; away: Team } {
+    return { home: this.homeTeam, away: this.awayTeam };
+  }
+
+  getTeam(id: TeamId): Team {
+    return id === "home" ? this.homeTeam : this.awayTeam;
+  }
+
+  getMatchState(): MatchStateMachine {
+    return this.matchState;
   }
 
   registerPlayer(index: number, body: RapierRigidBody | null, home: [number, number, number], team: Team) {
@@ -111,13 +148,16 @@ export class GameLoop {
       return;
     }
 
-    if (gameStateStore.getState().paused) return;
-
+    this.matchState.update(delta);
     this.updateClock(delta);
-    this.updateAI(delta);
-    this.updatePhysics();
-    this.updateBall(delta);
-    this.updateCollisions();
+
+    if (this.matchState.isPlaying()) {
+      this.updateAI(delta);
+      this.updatePhysics();
+      this.updateBall(delta);
+      this.updateCollisions();
+    }
+
     this.updateReferee();
     this.updateWhistle();
     this.generateEvents();
@@ -145,7 +185,7 @@ export class GameLoop {
 
   private endReplay() {
     gameStateStore.getState().setReplayState("live");
-    gameStateStore.getState().setPaused(false);
+    gameStateStore.getState().setPaused(!this.matchState.isPlaying());
     this.replayFrames = [];
     this.replayIndex = 0;
     this.replayElapsed = 0;
@@ -194,6 +234,29 @@ export class GameLoop {
     this.replayBuffer.record({ t: this.clock, players, ball });
   }
 
+  // Called whenever the match state machine enters KICKOFF (initial kickoff,
+  // after a goal, or after half-time) — snaps everyone back to their
+  // formation spot and the ball to the center, clearing possession state.
+  private resetForKickoff() {
+    if (this.ball) {
+      this.ball.setTranslation({ x: 0, y: 2, z: 0 }, true);
+      this.ball.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    }
+    this.players.forEach((player) => {
+      if (!player) return;
+      const [x, y, z] = player.ai.home;
+      player.body.setTranslation({ x, y, z }, true);
+      player.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    });
+    this.brain = createBrainState();
+    this.lastTouchTeam = null;
+  }
+
+  private flipAttackingDirections() {
+    this.homeTeam.flipAttackingDirection();
+    this.awayTeam.flipAttackingDirection();
+  }
+
   private updateClock(delta: number) {
     this.clock += delta;
     const whole = Math.floor(this.clock);
@@ -213,7 +276,8 @@ export class GameLoop {
   private updatePhysics() {
     // No-op: @react-three/rapier's <Physics> component steps the world
     // automatically once per frame, right after this hook runs (and is
-    // itself paused/resumed from the store's `paused` flag — see Game.tsx).
+    // itself paused/resumed from the store's `paused` flag — see Game.tsx —
+    // which mirrors matchState.isPlaying(), not an independent switch).
   }
 
   private updateBall(delta: number) {
@@ -241,12 +305,12 @@ export class GameLoop {
 
     switch (result.kind) {
       case "pass":
-        this.lastTouchTeam = this.players[result.to]?.team ?? this.lastTouchTeam;
+        this.lastTouchTeam = this.players[result.to]?.team.id ?? this.lastTouchTeam;
         this.bus.emit({ ...result, at });
         break;
 
       case "tackle":
-        this.lastTouchTeam = this.players[result.by]?.team ?? this.lastTouchTeam;
+        this.lastTouchTeam = this.players[result.by]?.team.id ?? this.lastTouchTeam;
         this.bus.emit({ ...result, at });
         break;
 
@@ -254,12 +318,14 @@ export class GameLoop {
         this.lastTouchTeam = result.team;
         this.bus.emit({ ...result, at });
         if (result.scored) {
+          this.getTeam(result.team).addGoal();
           this.bus.emit({ kind: "goal", by: result.by, team: result.team, at });
+          this.matchState.reportGoal();
         }
         break;
 
       case "foul": {
-        this.lastTouchTeam = this.players[result.against]?.team ?? this.lastTouchTeam;
+        this.lastTouchTeam = this.players[result.against]?.team.id ?? this.lastTouchTeam;
         const vision = this.evaluateVision(result.position);
         this.bus.emit({ ...result, given: decideCall(vision), visionQuality: vision.quality, at });
         break;

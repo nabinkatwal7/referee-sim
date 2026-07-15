@@ -1,3 +1,4 @@
+import { MatchState } from "../../engine/match/MatchStateMachine";
 import { useGameStore } from "./useGameState";
 
 const formatClock = (seconds: number) => {
@@ -10,6 +11,13 @@ const formatClock = (seconds: number) => {
   return `${m}:${s}`;
 };
 
+const PHASE_LABEL: Partial<Record<MatchState, string>> = {
+  [MatchState.KICKOFF]: "KICKOFF",
+  [MatchState.GOAL]: "GOAL!",
+  [MatchState.HALF_TIME]: "HALF TIME",
+  [MatchState.FULL_TIME]: "FULL TIME",
+};
+
 const HUD = () => {
   const score = useGameStore((state) => state.score);
   const time = useGameStore((state) => state.time);
@@ -19,6 +27,9 @@ const HUD = () => {
   const pendingFoul = useGameStore((state) => state.pendingFoul);
   const decisionWindowOpen = useGameStore((state) => state.decisionWindowOpen);
   const replayState = useGameStore((state) => state.replayState);
+  const matchPhase = useGameStore((state) => state.matchPhase);
+
+  const phaseLabel = PHASE_LABEL[matchPhase];
 
   return (
     <div
@@ -35,8 +46,11 @@ const HUD = () => {
     >
       <div>
         {score.home} - {score.away} &nbsp; {formatClock(time)} &nbsp; Rating: {rating.toFixed(1)}{" "}
-        {paused && "(PAUSED)"}
+        {paused && matchPhase !== MatchState.PAUSED && "(PAUSED)"}
       </div>
+      {phaseLabel && (
+        <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{phaseLabel}</div>
+      )}
       {currentEvent && <div style={{ opacity: 0.8, fontSize: 13 }}>{currentEvent}</div>}
       {pendingFoul && !decisionWindowOpen && (
         <div style={{ opacity: 0.9, fontSize: 13, color: "#ffd54f" }}>

@@ -5,7 +5,7 @@ import { CapsuleCollider, RigidBody, type RapierRigidBody } from "@react-three/r
 import type { GameLoop } from "../../engine/match/GameLoop";
 import Character, { type CharacterAnimation } from "../Character";
 import { mapPlayerAnimation } from "../animationMap";
-import type { Team } from "./brain";
+import type { Team } from "../../engine/team/Team";
 
 const ANIMATION_POLL_INTERVAL = 0.15; // seconds — avoid re-rendering 22 players every frame
 

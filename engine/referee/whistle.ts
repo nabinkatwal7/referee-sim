@@ -1,5 +1,6 @@
 import { scoreDecision, type DecisionAction, PENDING_TIMEOUT } from "./decision";
 import { gameStateStore } from "../match/gameState";
+import type { MatchStateMachine } from "../match/MatchStateMachine";
 
 const describeAction = (action: DecisionAction): string =>
   ({
@@ -10,19 +11,23 @@ const describeAction = (action: DecisionAction): string =>
     red: "Red card",
   })[action];
 
-// Space pressed: if there's an incident waiting, open the decision window.
-// The reaction time (for the "late" penalty) is measured from the incident
-// to THIS moment — deliberation time after the window opens doesn't count
-// against the player, same as a real referee who has already stopped play.
-export const blowWhistle = (currentMatchTime: number) => {
+// Space pressed: if there's an incident waiting, open the decision window
+// AND tell the match state machine to pause (it's the single authority on
+// "what's happening"; the store's `paused` flag just mirrors it for the UI
+// and <Physics paused>). The reaction time (for the "late" penalty) is
+// measured from the incident to THIS moment — deliberation time after the
+// window opens doesn't count against the player, same as a real referee who
+// has already stopped play.
+export const blowWhistle = (currentMatchTime: number, matchState: MatchStateMachine) => {
   const store = gameStateStore.getState();
   if (!store.pendingFoul || store.decisionWindowOpen) return;
   const reactionTime = Math.max(0, currentMatchTime - store.pendingFoul.at);
+  matchState.pause();
   store.openDecisionWindow(reactionTime);
 };
 
 // The player picks one of Play On / Advantage / Foul / Yellow / Red.
-export const makeDecision = (action: DecisionAction) => {
+export const makeDecision = (action: DecisionAction, matchState: MatchStateMachine) => {
   const store = gameStateStore.getState();
   const foul = store.pendingFoul;
   if (!foul || store.pendingReactionTime === null) return;
@@ -38,11 +43,13 @@ export const makeDecision = (action: DecisionAction) => {
   store.setCurrentEvent(`${describeAction(action)} (${notes.join(", ")})`);
 
   store.closeDecisionWindow();
+  matchState.resume();
 };
 
 // Called every tick by the engine: if an incident has gone unacted-on for
 // too long, it resolves itself as a missed "Play On" — always late, scored
-// the same way a real decision would be.
+// the same way a real decision would be. Never opened the decision window,
+// so there's nothing to resume here.
 export const expirePendingFoul = (currentMatchTime: number) => {
   const store = gameStateStore.getState();
   const foul = store.pendingFoul;
