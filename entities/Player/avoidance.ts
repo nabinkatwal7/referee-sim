@@ -4,10 +4,10 @@ import type { Pos2 } from "../Ball/nearestPlayer";
 // Collision Avoidance — soft characters (no player-player physics).
 // Steering + repulsion + hard positional unstick.
 
-const SEPARATION_RADIUS = 2.4;
-const HARD_RADIUS = 1.15;
-const REPULSION = 7.5;
-const SMOOTH = 0.45;
+const SEPARATION_RADIUS = 2.2;
+const HARD_RADIUS = 1.05;
+const REPULSION = 5.5;
+const SMOOTH = 0.22; // gentler blend — less sticky oscillation
 const MAX_SPEED = 7;
 
 export type Vel2 = Pos2;
@@ -139,7 +139,8 @@ export const resolveOverlaps = (bodies: (RapierRigidBody | null)[]) => {
       const dz = a.z - b.z;
       const dist = Math.hypot(dx, dz);
       if (dist >= HARD_RADIUS || dist < 1e-5) continue;
-      const push = (HARD_RADIUS - dist) * 0.5;
+      // Soft unstick — full correction looked like vibrating players.
+      const push = (HARD_RADIUS - dist) * 0.28;
       const dir = normalize(dx, dz);
       a.x += dir.x * push;
       a.z += dir.z * push;
@@ -156,7 +157,7 @@ export const resolveOverlaps = (bodies: (RapierRigidBody | null)[]) => {
     if (!body || !self) continue;
 
     const t = body.translation();
-    if (Math.hypot(self.x - t.x, self.z - t.z) > 0.01) {
+    if (Math.hypot(self.x - t.x, self.z - t.z) > 0.008) {
       body.setTranslation({ x: self.x, y: t.y, z: self.z }, true);
     }
 
@@ -167,11 +168,11 @@ export const resolveOverlaps = (bodies: (RapierRigidBody | null)[]) => {
     }
 
     const rep = repulsionForce(self, neighbors);
-    if (Math.hypot(rep.x, rep.z) < 0.05) continue;
+    if (Math.hypot(rep.x, rep.z) < 0.08) continue;
 
     const cur = body.linvel();
-    const desired = { x: cur.x + rep.x, z: cur.z + rep.z };
-    const smoothed = smoothVelocity({ x: cur.x, z: cur.z }, desired, 0.55);
+    const desired = { x: cur.x + rep.x * 0.65, z: cur.z + rep.z * 0.65 };
+    const smoothed = smoothVelocity({ x: cur.x, z: cur.z }, desired, 0.2);
     body.setLinvel({ x: smoothed.x, y: cur.y, z: smoothed.z }, true);
   }
 };

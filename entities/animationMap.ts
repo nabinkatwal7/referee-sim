@@ -12,9 +12,8 @@ const locoFromSpeed = (speed: number): CharacterAnimation => {
   return "walk";
 };
 
-// Maps our FSM states onto the clips the Kenney model actually ships. A few
-// are best-fit stand-ins rather than exact matches (no dedicated "shoot" or
-// "tackle" clip exists) — see entities/Character.tsx for the full list.
+// Maps FSM → CharacterAnimation for the procedural humanoid
+// (walk/sprint cycles, kick / melee one-shots, etc.).
 export const mapPlayerAnimation = (
   fsmState: PlayerFSMState,
   speed: number,
