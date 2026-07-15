@@ -1,6 +1,7 @@
 import { RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import { useCallback } from "react";
 import type { GameLoop } from "../../engine/match/GameLoop";
+import { ballCollisionGroups } from "../collisionGroups";
 import { BALL_RADIUS } from "./radius";
 
 type Props = {
@@ -23,6 +24,8 @@ const Ball = ({ gameLoop }: Props) => {
       position={[0, 2, 0]}
       colliders="ball"
       restitution={0.6}
+      collisionGroups={ballCollisionGroups}
+      solverGroups={ballCollisionGroups}
     >
       <mesh castShadow receiveShadow>
         <sphereGeometry args={[BALL_RADIUS, 32, 32]} />

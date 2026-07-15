@@ -10,6 +10,7 @@ import { REFEREE_START_POSITION } from "../../components/game/pitchDimensions";
 import type { GameLoop } from "../../engine/match/GameLoop";
 import Character, { type CharacterAnimation } from "../Character";
 import { mapRefereeAnimation } from "../animationMap";
+import { playerCollisionGroups } from "../collisionGroups";
 import { Controls } from "./controls";
 
 const ANIMATION_POLL_INTERVAL = 0.15;
@@ -49,6 +50,8 @@ const Referee = ({ gameLoop }: Props) => {
       position={REFEREE_START_POSITION}
       colliders={false}
       lockRotations
+      collisionGroups={playerCollisionGroups}
+      solverGroups={playerCollisionGroups}
     >
       <CapsuleCollider args={[0.5, 0.4]} />
       <Character color="#212121" animation={animation} />

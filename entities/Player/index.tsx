@@ -6,6 +6,7 @@ import type { GameLoop } from "../../engine/match/GameLoop";
 import type { Role } from "../formation";
 import Character, { type CharacterAnimation } from "../Character";
 import { mapKeeperAnimation, mapPlayerAnimation } from "../animationMap";
+import { playerCollisionGroups } from "../collisionGroups";
 import type { Team } from "../../engine/team/Team";
 
 const ANIMATION_POLL_INTERVAL = 0.15; // seconds — avoid re-rendering 22 players every frame
@@ -48,7 +49,14 @@ const Player = ({ index, home, team, color = "#1976d2", name, role, gameLoop }: 
   });
 
   return (
-    <RigidBody ref={setRef} position={home} colliders={false} lockRotations>
+    <RigidBody
+      ref={setRef}
+      position={home}
+      colliders={false}
+      lockRotations
+      collisionGroups={playerCollisionGroups}
+      solverGroups={playerCollisionGroups}
+    >
       <CapsuleCollider args={[0.5, 0.4]} />
       <Character color={color} animation={animation} />
       {name && (

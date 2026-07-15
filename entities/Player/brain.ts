@@ -213,7 +213,19 @@ export const stepMatchBrain = (
       if (candidate && !isGK(candidate)) {
         const p = posOf(candidate);
         if (isBallArriving(p, ballXZ, ballVelXZ) && !canReceive(ballSpeed, nearest.dist)) {
-          approachBall(candidate.body, candidate.ai, ballXZ, ballVelXZ);
+          const neighbors: Pos2[] = [];
+          for (let j = 0; j < players.length; j++) {
+            if (j === nearest.index || !players[j]) continue;
+            neighbors.push(posOf(players[j]!));
+          }
+          approachBall(
+            candidate.body,
+            candidate.ai,
+            ballXZ,
+            ballVelXZ,
+            neighbors,
+            nearest.index % 2 === 0 ? 1 : -1,
+          );
         }
       }
     }
@@ -455,8 +467,10 @@ const stepFieldDefense = (
 
   let tackleEvent: MatchEvent | null = null;
 
-  // Only closest 2 outfielders per team chase the ball — rest hold shape.
+  // Only closest outfielders chase — rest hold shape.
+  // Loose ball: 1 per team. Opponent on ball: 2 (first man + angled cover).
   const chaseFocus = carrierPos ?? ballXZ;
+  const loose = hasBallTeam === null;
   const byTeam = new Map<string, { i: number; dist: number }[]>();
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
@@ -468,11 +482,18 @@ const stepFieldDefense = (
     byTeam.set(p.team.id, list);
   }
   const chasers = new Set<number>();
+  const chaseRank = new Map<number, number>();
+  const chaseSide = new Map<number, 1 | -1>();
   for (const list of byTeam.values()) {
     list
       .sort((a, b) => a.dist - b.dist)
-      .slice(0, 2)
-      .forEach((e) => chasers.add(e.i));
+      .slice(0, loose ? 1 : 2)
+      .forEach((e, rank) => {
+        chasers.add(e.i);
+        chaseRank.set(e.i, rank);
+        // Alternate lanes by roster index so left/right stay stable.
+        chaseSide.set(e.i, e.i % 2 === 0 ? 1 : -1);
+      });
   }
 
   for (let i = 0; i < players.length; i++) {
@@ -521,6 +542,8 @@ const stepFieldDefense = (
       tactics: p.team.tactics,
       neighbors: neighborPos,
       allowChase: chasers.has(i),
+      chaseRank: chaseRank.get(i) ?? 0,
+      chaseSide: chaseSide.get(i) ?? (i % 2 === 0 ? 1 : -1),
     });
 
     if (

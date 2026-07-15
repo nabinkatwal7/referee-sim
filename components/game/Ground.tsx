@@ -1,6 +1,7 @@
 import { RigidBody } from "@react-three/rapier";
 import { useMemo } from "react";
 import * as THREE from "three";
+import { worldCollisionGroups } from "../../entities/collisionGroups";
 import {
   PITCH_LENGTH,
   PITCH_WIDTH,
@@ -51,7 +52,12 @@ const Ground = () => {
   }, [width, length]);
 
   return (
-    <RigidBody type="fixed" colliders="cuboid">
+    <RigidBody
+      type="fixed"
+      colliders="cuboid"
+      collisionGroups={worldCollisionGroups}
+      solverGroups={worldCollisionGroups}
+    >
       <mesh receiveShadow position={[0, -0.07, 0]}>
         <boxGeometry args={[width, 0.1, length]} />
         <meshStandardMaterial map={texture} />

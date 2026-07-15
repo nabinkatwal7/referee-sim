@@ -1,7 +1,7 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { TeamId } from "../../engine/team/Team";
 import type { Pos2 } from "../Ball/nearestPlayer";
-import { applySteering } from "./avoidance";
+import { applySteering, spacedApproachTarget } from "./avoidance";
 import { predictBallPosition, timeToNearPoint } from "./ballPrediction";
 import type { PlayerAIState } from "./ai";
 import { dynamicShapeTarget, shapePhaseFor, type PlayerAnchors } from "./positioning";
@@ -19,7 +19,7 @@ const PRESS_SPEED = 5.5;
 const TRACK_SPEED = 4;
 const RECOVER_SPEED = 4.5;
 const INTERCEPT_SPEED = 5.8;
-const TACKLE_RANGE = 2.4;
+const TACKLE_RANGE = 2.6;
 const MARK_OFFSET = 2.5;
 
 export type DefendContext = {
@@ -38,6 +38,10 @@ export type DefendContext = {
   neighbors: Pos2[];
   /** Only the closest few teammates may press / intercept the ball. */
   allowChase: boolean;
+  /** 0 = first man in; 1+ = support angle. */
+  chaseRank: number;
+  /** Stable left/right lane so pressers don't stack. */
+  chaseSide: 1 | -1;
 };
 
 export type DefendResult =
@@ -70,11 +74,13 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
 
   if (opponentHasBall && ctx.carrier) {
     const distCarrier = Math.hypot(ctx.carrier.x - ctx.self.x, ctx.carrier.z - ctx.self.z);
-    if (ctx.allowChase && distCarrier < TACKLE_RANGE) return "tackle";
+    // Only first man engages the tackle — support holds the angle.
+    if (ctx.allowChase && ctx.chaseRank === 0 && distCarrier < TACKLE_RANGE) return "tackle";
     if (ctx.allowChase && distCarrier < pressDist) return "press";
-    // Step 37 — pass in flight toward mark → intercept.
-    if (ctx.allowChase && ctx.passTarget && ballSpeed > 3) return "intercept";
-    if (ctx.allowChase && ctx.mark && ballSpeed > 3) {
+    if (ctx.allowChase && ctx.chaseRank === 0 && ctx.passTarget && ballSpeed > 3) {
+      return "intercept";
+    }
+    if (ctx.allowChase && ctx.chaseRank === 0 && ctx.mark && ballSpeed > 3) {
       const closing =
         (ctx.ballVel.x * (ctx.mark.x - ctx.ball.x) +
           ctx.ballVel.z * (ctx.mark.z - ctx.ball.z)) /
@@ -88,6 +94,7 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
     const future = predictBallPosition(ctx.ball, ctx.ballVel, 0.5);
     const distBall = Math.hypot(future.x - ctx.self.x, future.z - ctx.self.z);
     if (ctx.allowChase && distBall < 12 && ballSpeed > 2) return "intercept";
+    if (ctx.allowChase && distBall < 10) return "press";
     return "recover";
   }
 
@@ -110,31 +117,38 @@ export const stepDefendAI = (
   const stam = staminaSpeedFactor(ai.stamina);
   const n = ctx.neighbors;
 
+  const focus = ctx.carrier ?? ctx.ball;
+  const spaced = spacedApproachTarget(ctx.self, focus, n, ctx.chaseSide, ctx.chaseRank);
+
   switch (phase) {
     case "track": {
       if (ctx.mark) moveToward(body, ctx.self, markingSpot(ctx.mark, ctx.attackDir), TRACK_SPEED, n, stam);
-      else if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, TRACK_SPEED, n, stam);
+      else if (ctx.carrier) moveToward(body, ctx.self, spaced, TRACK_SPEED, n, stam);
       else body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
       return { kind: "none", phase };
     }
     case "intercept": {
-      const aim = ctx.passTarget ?? ctx.mark ?? ctx.carrier ?? ctx.ball;
+      const aim = ctx.passTarget ?? ctx.mark ?? spaced;
       const t = timeToNearPoint(ctx.ball, ctx.ballVel, aim);
       const future = predictBallPosition(ctx.ball, ctx.ballVel, Math.max(0.25, t));
-      moveToward(body, ctx.self, future, INTERCEPT_SPEED * pressMul, n, stam);
+      const interceptAim = spacedApproachTarget(
+        ctx.self,
+        future,
+        n,
+        ctx.chaseSide,
+        ctx.chaseRank,
+      );
+      moveToward(body, ctx.self, interceptAim, INTERCEPT_SPEED * pressMul, n, stam);
       return { kind: "none", phase };
     }
     case "press": {
-      if (ctx.carrier) {
-        moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED * pressMul, n, stam);
-      } else {
-        const future = predictBallPosition(ctx.ball, ctx.ballVel, 0.35);
-        moveToward(body, ctx.self, future, PRESS_SPEED * pressMul, n, stam);
-      }
+      moveToward(body, ctx.self, spaced, PRESS_SPEED * pressMul, n, stam);
       return { kind: "none", phase };
     }
     case "tackle": {
-      if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED * pressMul, n, stam);
+      // Jockey into the shoulder, not through the torso.
+      const shoulder = spacedApproachTarget(ctx.self, focus, n, ctx.chaseSide, 0);
+      moveToward(body, ctx.self, shoulder, PRESS_SPEED * pressMul * 1.05, n, stam);
       return { kind: "tackle", phase: "tackle" };
     }
     case "recover": {

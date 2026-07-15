@@ -10,59 +10,83 @@ const anchors = {
   defend: { x: 0, z: -24 },
 };
 
+const base = {
+  anchors,
+  ball: { x: 2, z: 2 },
+  ballVel: { x: 0, z: 0 },
+  passTarget: null as null,
+  attackDir: 1 as const,
+  ownTeam: "home" as const,
+  tactics: DEFAULT_TACTICS,
+  neighbors: [] as { x: number; z: number }[],
+  chaseSide: 1 as const,
+};
+
 assert.equal(
   chooseDefendPhase({
+    ...base,
     self: { x: 0, z: 0 },
-    anchors,
-    ball: { x: 2, z: 2 },
-    ballVel: { x: 0, z: 0 },
     carrier: { x: 2, z: 2 },
-    passTarget: null,
     mark: { x: 2, z: 2 },
-    attackDir: 1,
     hasBallTeam: "away",
-    ownTeam: "home",
-    tactics: DEFAULT_TACTICS,
-    neighbors: [],
     allowChase: true,
+    chaseRank: 0,
   }),
   "press",
 );
 
 assert.equal(
   chooseDefendPhase({
+    ...base,
     self: { x: 0, z: 0 },
-    anchors,
-    ball: { x: 2, z: 2 },
-    ballVel: { x: 0, z: 0 },
     carrier: { x: 1, z: 1 },
-    passTarget: null,
     mark: { x: 1, z: 1 },
-    attackDir: 1,
     hasBallTeam: "away",
-    ownTeam: "home",
-    tactics: DEFAULT_TACTICS,
-    neighbors: [],
     allowChase: true,
+    chaseRank: 0,
   }),
   "tackle",
 );
 
 assert.equal(
   chooseDefendPhase({
+    ...base,
     self: { x: 0, z: 0 },
-    anchors,
     ball: { x: 2, z: 2 },
-    ballVel: { x: 0, z: 0 },
-    carrier: { x: 2, z: 2 },
-    passTarget: null,
-    mark: { x: 2, z: 2 },
-    attackDir: 1,
+    carrier: { x: 1, z: 1 },
+    mark: { x: 1, z: 1 },
     hasBallTeam: "away",
-    ownTeam: "home",
-    tactics: DEFAULT_TACTICS,
-    neighbors: [],
+    allowChase: true,
+    chaseRank: 1,
+  }),
+  "press",
+  "support rank does not dive into tackle",
+);
+
+assert.equal(
+  chooseDefendPhase({
+    ...base,
+    self: { x: 0, z: 0 },
+    ball: { x: 0, z: 10 },
+    carrier: { x: 0, z: 10 },
+    mark: null,
+    hasBallTeam: "home",
     allowChase: false,
+    chaseRank: 0,
+  }),
+  "recover",
+);
+
+assert.equal(
+  chooseDefendPhase({
+    ...base,
+    self: { x: 0, z: 0 },
+    ball: { x: 2, z: 2 },
+    carrier: { x: 2, z: 2 },
+    mark: { x: 2, z: 2 },
+    hasBallTeam: "away",
+    allowChase: false,
+    chaseRank: 0,
   }),
   "track",
   "non-chasers hold mark instead of swarming",

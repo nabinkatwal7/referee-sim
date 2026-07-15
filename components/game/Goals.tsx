@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RigidBody } from "@react-three/rapier";
+import { worldCollisionGroups } from "../../entities/collisionGroups";
 import { PITCH_LENGTH } from "./pitchDimensions";
 
 const GOAL_WIDTH = 7.32;
@@ -11,7 +12,13 @@ const GoalFrame = ({ z, facing }: { z: number; facing: 1 | -1 }) => {
   const halfWidth = GOAL_WIDTH / 2;
 
   return (
-    <RigidBody type="fixed" colliders="hull" position={[0, 0, z]}>
+    <RigidBody
+      type="fixed"
+      colliders="hull"
+      position={[0, 0, z]}
+      collisionGroups={worldCollisionGroups}
+      solverGroups={worldCollisionGroups}
+    >
       <mesh castShadow receiveShadow position={[-halfWidth, GOAL_HEIGHT / 2, 0]}>
         <cylinderGeometry args={[POST_RADIUS, POST_RADIUS, GOAL_HEIGHT, 12]} />
         <meshStandardMaterial color="#ffffff" />

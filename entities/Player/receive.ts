@@ -1,6 +1,7 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { Pos2 } from "../Ball/nearestPlayer";
 import type { PlayerAIState } from "./ai";
+import { applySteering, spacedApproachTarget } from "./avoidance";
 import { predictBallPosition, timeToNearPoint } from "./ballPrediction";
 
 // Receiving Ball — running → ball arriving → slow down → receive → face goal.
@@ -27,23 +28,28 @@ export const isBallArriving = (
   return closing > 0.5 && dist < APPROACH_RADIUS;
 };
 
-/** Slow and steer toward where the ball will be. Does not teleport. */
+/** Slow and steer toward where the ball will be — with spacing vs neighbors. */
 export const approachBall = (
   body: RapierRigidBody,
   ai: PlayerAIState,
   ball: Pos2,
   ballVel: Pos2 = { x: 0, z: 0 },
+  neighbors: Pos2[] = [],
+  chaseSide: 1 | -1 = 1,
 ) => {
   const pos = body.translation();
   const self: Pos2 = { x: pos.x, z: pos.z };
   const t = timeToNearPoint(ball, ballVel, self);
-  const target = predictBallPosition(ball, ballVel, Math.max(0.2, t));
-  const dx = target.x - pos.x;
-  const dz = target.z - pos.z;
-  const dist = Math.hypot(dx, dz) || 1;
+  const predicted = predictBallPosition(ball, ballVel, Math.max(0.2, t));
+  const target = spacedApproachTarget(self, predicted, neighbors, chaseSide, 0);
+  const dist = Math.hypot(target.x - self.x, target.z - self.z) || 1;
   const speed = dist > 4 ? APPROACH_SPEED : RECEIVE_SPEED;
-  const linvel = body.linvel();
-  body.setLinvel({ x: (dx / dist) * speed, y: linvel.y, z: (dz / dist) * speed }, true);
+  applySteering(
+    body,
+    { x: target.x - self.x, z: target.z - self.z },
+    speed,
+    neighbors,
+  );
   ai.fsmState = "receive";
 };
 
