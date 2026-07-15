@@ -1,11 +1,15 @@
-import { useCallback, useRef, useState } from "react";
 import { useKeyboardControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { CapsuleCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
+import {
+  CapsuleCollider,
+  RigidBody,
+  type RapierRigidBody,
+} from "@react-three/rapier";
+import { useCallback, useRef, useState } from "react";
+import { REFEREE_START_POSITION } from "../../components/game/pitchDimensions";
 import type { GameLoop } from "../../engine/match/GameLoop";
 import Character, { type CharacterAnimation } from "../Character";
 import { mapRefereeAnimation } from "../animationMap";
-import { REFEREE_START_POSITION } from "../../components/game/pitchDimensions";
 import { Controls } from "./controls";
 
 const ANIMATION_POLL_INTERVAL = 0.15;
@@ -40,7 +44,12 @@ const Referee = ({ gameLoop }: Props) => {
   });
 
   return (
-    <RigidBody ref={setRef} position={REFEREE_START_POSITION} colliders={false} lockRotations>
+    <RigidBody
+      ref={setRef}
+      position={REFEREE_START_POSITION}
+      colliders={false}
+      lockRotations
+    >
       <CapsuleCollider args={[0.5, 0.4]} />
       <Character color="#212121" animation={animation} />
     </RigidBody>

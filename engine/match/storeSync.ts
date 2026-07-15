@@ -1,8 +1,7 @@
 import type { EventBus } from "./EventBus";
-import type { MatchEvent, Team } from "./events";
+import type { MatchEvent } from "./events";
 import { gameStateStore } from "./gameState";
 
-const teamToSide = (team: Team): "home" | "away" => (team === "A" ? "home" : "away");
 const CARD_PROBABILITY_ON_FOUL = 0.15; // most fouls are just a free kick, not a booking
 
 const describe = (event: MatchEvent): string => {
@@ -61,7 +60,7 @@ export const wireStoreToEvents = (bus: EventBus) => {
         store.setPossession(event.by);
         break;
       case "goal":
-        store.addGoal(teamToSide(event.team));
+        store.addGoal(event.team);
         store.setPossession(null);
         break;
       case "shot":

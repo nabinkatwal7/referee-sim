@@ -1,5 +1,5 @@
-import { useCallback } from "react";
 import { RigidBody, type RapierRigidBody } from "@react-three/rapier";
+import { useCallback } from "react";
 import type { GameLoop } from "../../engine/match/GameLoop";
 
 // Regulation ball: ~70cm circumference -> ~0.11m radius.
@@ -20,7 +20,12 @@ const Ball = ({ gameLoop }: Props) => {
   );
 
   return (
-    <RigidBody ref={setRef} position={[0, 2, 0]} colliders="ball" restitution={0.6}>
+    <RigidBody
+      ref={setRef}
+      position={[0, 2, 0]}
+      colliders="ball"
+      restitution={0.6}
+    >
       <mesh castShadow receiveShadow>
         <sphereGeometry args={[BALL_RADIUS, 32, 32]} />
         <meshStandardMaterial color="#f5f5f5" />

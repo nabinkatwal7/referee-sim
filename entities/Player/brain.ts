@@ -1,10 +1,7 @@
-import { MathUtils } from "three";
 import type { RapierRigidBody } from "@react-three/rapier";
-import {
-  PITCH_LENGTH,
-  PENALTY_BOX_DEPTH,
-  PENALTY_BOX_WIDTH,
-} from "../../components/game/pitchDimensions";
+import { MathUtils } from "three";
+import { PENALTY_BOX_DEPTH, PENALTY_BOX_WIDTH, PITCH_LENGTH } from "../../components/game/pitchDimensions";
+import type { Team, TeamId } from "../../engine/team/Team";
 import { enterReactionState, type PlayerAIState } from "./ai";
 
 const PICKUP_RADIUS = 6; // generous — players wander independently, not toward the ball
@@ -28,11 +25,9 @@ const CELEBRATE_DURATION = 3;
 
 const OWN_GOAL_LINE = PITCH_LENGTH / 2;
 
-export type Team = "A" | "B";
-
 export type PlayerRef = {
   body: RapierRigidBody;
-  team: Team;
+  team: Team; // live reference — attackingDirection can flip at half-time
   ai: PlayerAIState;
 };
 
@@ -47,7 +42,7 @@ const randomHold = () => MIN_HOLD + Math.random() * (MAX_HOLD - MIN_HOLD);
 
 export type MatchEvent =
   | { kind: "pass"; from: number; to: number }
-  | { kind: "shot"; by: number; team: Team; scored: boolean }
+  | { kind: "shot"; by: number; team: TeamId; scored: boolean }
   | { kind: "tackle"; by: number; from: number }
   | {
       kind: "foul";
@@ -59,24 +54,26 @@ export type MatchEvent =
       kind: "penalty";
       by: number;
       against: number;
-      team: Team;
+      team: TeamId;
       position: { x: number; z: number };
     }
   | {
       kind: "offside";
       by: number;
-      team: Team;
+      team: TeamId;
       position: { x: number; z: number };
     };
 
-const opponentGoalZ = (team: Team) => (team === "A" ? OWN_GOAL_LINE : -OWN_GOAL_LINE);
-const attackDirection = (team: Team) => (team === "A" ? 1 : -1);
+// A team's own goal sits opposite whichever way it currently attacks — this
+// reads the LIVE direction, so it stays correct after a half-time flip.
+const opponentGoalZ = (team: Team) => team.attackingDirection * OWN_GOAL_LINE;
 
 const isInOwnPenaltyBox = (pos: { x: number; z: number }, team: Team): boolean => {
   if (Math.abs(pos.x) > PENALTY_BOX_WIDTH / 2) return false;
-  return team === "A"
-    ? pos.z >= -OWN_GOAL_LINE && pos.z <= -OWN_GOAL_LINE + PENALTY_BOX_DEPTH
-    : pos.z <= OWN_GOAL_LINE && pos.z >= OWN_GOAL_LINE - PENALTY_BOX_DEPTH;
+  const ownGoalZ = -team.attackingDirection * OWN_GOAL_LINE;
+  return team.attackingDirection === 1
+    ? pos.z >= ownGoalZ && pos.z <= ownGoalZ + PENALTY_BOX_DEPTH
+    : pos.z <= ownGoalZ && pos.z >= ownGoalZ - PENALTY_BOX_DEPTH;
 };
 
 // Simplified offside: the receiver is offside if, at the moment of the pass,
@@ -88,12 +85,12 @@ const checkOffside = (
   receiverIndex: number,
   ballPos: { x: number; z: number },
 ): boolean => {
-  const dir = attackDirection(attackingTeam);
+  const dir = attackingTeam.attackingDirection;
   const receiver = players[receiverIndex];
   if (!receiver) return false;
 
   const defenderAdvancement = players
-    .filter((p): p is PlayerRef => !!p && p.team !== attackingTeam)
+    .filter((p): p is PlayerRef => !!p && p.team.id !== attackingTeam.id)
     .map((p) => p.body.translation().z * dir)
     .sort((a, b) => b - a);
 
@@ -145,7 +142,7 @@ export const stepMatchBrain = (
     let outcome: MatchEvent | null = null;
 
     players.forEach((player, i) => {
-      if (outcome || !player || i === receiverIndex || player.team === receiver.team) return;
+      if (outcome || !player || i === receiverIndex || player.team.id === receiver.team.id) return;
       const p = player.body.translation();
       const dist = Math.hypot(p.x - ballPos.x, p.z - ballPos.z);
       if (dist >= TACKLE_RANGE) return;
@@ -157,7 +154,7 @@ export const stepMatchBrain = (
             kind: "penalty",
             by: i,
             against: receiverIndex,
-            team: receiver.team,
+            team: receiver.team.id,
             position,
           };
         } else {
@@ -206,12 +203,12 @@ export const stepMatchBrain = (
     );
 
     state.possessor = null;
-    return { kind: "shot", by: from, team: possessor.team, scored };
+    return { kind: "shot", by: from, team: possessor.team.id, scored };
   }
 
   const candidates = players
     .map((player, i) =>
-      player && i !== state.possessor && player.team === possessor.team ? i : null,
+      player && i !== state.possessor && player.team.id === possessor.team.id ? i : null,
     )
     .filter((i): i is number => i !== null);
 
@@ -235,7 +232,12 @@ export const stepMatchBrain = (
   state.possessor = null;
 
   if (checkOffside(players, possessor.team, receiverIndex, ballPos)) {
-    return { kind: "offside", by: receiverIndex, team: possessor.team, position: { x: ballPos.x, z: ballPos.z } };
+    return {
+      kind: "offside",
+      by: receiverIndex,
+      team: possessor.team.id,
+      position: { x: ballPos.x, z: ballPos.z },
+    };
   }
 
   return { kind: "pass", from, to: receiverIndex };

@@ -15,9 +15,12 @@ export const detectCollision = (
   const v = ball.linvel();
   const prevSpeed = Math.hypot(previousVelocity.x, previousVelocity.z);
   const curSpeed = Math.hypot(v.x, v.z);
-  if (prevSpeed < MIN_SPEED_FOR_COLLISION || curSpeed < MIN_SPEED_FOR_COLLISION) return false;
+  if (prevSpeed < MIN_SPEED_FOR_COLLISION || curSpeed < MIN_SPEED_FOR_COLLISION)
+    return false;
 
-  const dot = (previousVelocity.x * v.x + previousVelocity.z * v.z) / (prevSpeed * curSpeed);
+  const dot =
+    (previousVelocity.x * v.x + previousVelocity.z * v.z) /
+    (prevSpeed * curSpeed);
   const angleChange = Math.acos(Math.max(-1, Math.min(1, dot)));
   return angleChange > DIRECTION_CHANGE_THRESHOLD;
 };

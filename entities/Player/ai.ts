@@ -1,5 +1,5 @@
-import * as THREE from "three";
 import type { RapierRigidBody } from "@react-three/rapier";
+import * as THREE from "three";
 
 const WALK_SPEED = 2.5;
 const RUN_SPEED = 6;
@@ -14,7 +14,8 @@ const MAX_PAUSE = 3;
 // Celebrate are set externally by the match brain (see ./brain.ts) when the
 // ball is involved — this module just freezes movement while one of those
 // is active and hands control back once it expires.
-export type PlayerFSMState = "idle" | "move" | "receive" | "pass" | "shoot" | "tackle" | "celebrate";
+export type PlayerFSMState =
+  "idle" | "move" | "receive" | "pass" | "shoot" | "tackle" | "celebrate";
 
 const REACTION_STATES = new Set<PlayerFSMState>([
   "receive",
@@ -45,7 +46,9 @@ const randomTarget = (home: [number, number, number]) => {
   );
 };
 
-export const createPlayerAIState = (home: [number, number, number]): PlayerAIState => ({
+export const createPlayerAIState = (
+  home: [number, number, number],
+): PlayerAIState => ({
   home,
   target: randomTarget(home),
   elapsed: 0,
@@ -69,7 +72,11 @@ export const enterReactionState = (
 // its home spot, walks or sprints there depending on distance, then repeats.
 // Pure function — no React, no hooks — so it can run from the engine's
 // updateAI phase instead of the component's own frame loop.
-export const stepPlayerAI = (body: RapierRigidBody, state: PlayerAIState, delta: number) => {
+export const stepPlayerAI = (
+  body: RapierRigidBody,
+  state: PlayerAIState,
+  delta: number,
+) => {
   if (REACTION_STATES.has(state.fsmState)) {
     const linvel = body.linvel();
     body.setLinvel({ x: 0, y: linvel.y, z: 0 }, true);
@@ -90,7 +97,11 @@ export const stepPlayerAI = (body: RapierRigidBody, state: PlayerAIState, delta:
   }
 
   const pos = body.translation();
-  const toTarget = new THREE.Vector3(state.target.x - pos.x, 0, state.target.z - pos.z);
+  const toTarget = new THREE.Vector3(
+    state.target.x - pos.x,
+    0,
+    state.target.z - pos.z,
+  );
   const distance = toTarget.length();
 
   if (distance < ARRIVE_RADIUS) {
@@ -104,5 +115,8 @@ export const stepPlayerAI = (body: RapierRigidBody, state: PlayerAIState, delta:
   state.fsmState = "move";
   toTarget.normalize();
   const speed = distance > RUN_DISTANCE ? RUN_SPEED : WALK_SPEED;
-  body.setLinvel({ x: toTarget.x * speed, y: linvel.y, z: toTarget.z * speed }, true);
+  body.setLinvel(
+    { x: toTarget.x * speed, y: linvel.y, z: toTarget.z * speed },
+    true,
+  );
 };

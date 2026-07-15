@@ -37,13 +37,20 @@ export const detectPlayerCollisions = (
     const a = players[i];
     if (!a) continue;
     const aPos = a.body.translation();
-    if (Math.hypot(aPos.x - ballPos.x, aPos.z - ballPos.z) < BALL_EXCLUSION_RADIUS) continue;
+    if (
+      Math.hypot(aPos.x - ballPos.x, aPos.z - ballPos.z) < BALL_EXCLUSION_RADIUS
+    )
+      continue;
 
     for (let j = i + 1; j < players.length; j++) {
       const b = players[j];
       if (!b || b.team === a.team) continue; // only opponent-vs-opponent counts as a foul
       const bPos = b.body.translation();
-      if (Math.hypot(bPos.x - ballPos.x, bPos.z - ballPos.z) < BALL_EXCLUSION_RADIUS) continue;
+      if (
+        Math.hypot(bPos.x - ballPos.x, bPos.z - ballPos.z) <
+        BALL_EXCLUSION_RADIUS
+      )
+        continue;
 
       const dist = Math.hypot(aPos.x - bPos.x, aPos.z - bPos.z);
       if (dist > COLLISION_PROXIMITY) continue;

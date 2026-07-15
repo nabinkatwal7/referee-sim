@@ -1,4 +1,6 @@
-export type Team = "A" | "B";
+import type { TeamId } from "../team/Team";
+
+export type Team = TeamId;
 export type Vec2 = { x: number; z: number };
 
 type Base = { at: number }; // match clock, seconds
