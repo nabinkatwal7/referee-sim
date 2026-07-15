@@ -15,7 +15,7 @@ export const createBroadcast = (): BroadcastState => ({
 });
 
 export const beginBroadcastReplay = (
-  state: BroadcastState,
+  _state: BroadcastState,
   at: number,
   prefer: BroadcastAngle = "main",
 ): BroadcastState => ({

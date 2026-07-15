@@ -15,7 +15,7 @@ export const createFourthOfficial = (): FourthOfficialState => ({
 });
 
 export const showAddedTime = (
-  state: FourthOfficialState,
+  _state: FourthOfficialState,
   minutes: number,
 ): FourthOfficialState => ({
   board: {
@@ -36,6 +36,12 @@ export const announceSub = (
   },
 });
 
-export const clearFourthBoard = (state: FourthOfficialState): FourthOfficialState => ({
-  board: { addedMinutes: state.board.addedMinutes, message: null, subAnnounced: false },
+export const clearFourthBoard = (
+  state: FourthOfficialState,
+): FourthOfficialState => ({
+  board: {
+    addedMinutes: state.board.addedMinutes,
+    message: null,
+    subAnnounced: false,
+  },
 });

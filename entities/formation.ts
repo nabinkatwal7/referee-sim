@@ -1,9 +1,21 @@
 // Formation shapes — pitch is 105 long × 68 wide; goal lines at z = ±52.5.
 // `forward` is meters FROM OWN GOAL LINE toward the opponent.
 
-import type { Role } from "./Player/stats";
-
-export type { Role };
+export type Role =
+  | "GK"
+  | "CB"
+  | "LB"
+  | "RB"
+  | "LWB"
+  | "RWB"
+  | "CDM"
+  | "CM"
+  | "CAM"
+  | "LM"
+  | "RM"
+  | "LW"
+  | "RW"
+  | "ST";
 
 export type Side = "A" | "B";
 
