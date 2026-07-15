@@ -13,6 +13,7 @@ import type { AssistantState } from "../referee/assistants";
 import { createAssistants } from "../referee/assistants";
 import type { VarState } from "../referee/var";
 import { createVarState } from "../referee/var";
+import { createPolish, polishHud, type PolishHud } from "../polish";
 
 export type Score = { home: number; away: number };
 export type Card = { playerIndex: number; type: "yellow" | "red" };
@@ -44,6 +45,7 @@ export type GameState = {
   assistants: AssistantState;
   varState: VarState;
   career: CareerState;
+  polish: PolishHud;
 
   addGoal: (team: "home" | "away") => void;
   setTime: (time: number) => void;
@@ -64,6 +66,7 @@ export type GameState = {
   setAssistants: (assistants: AssistantState) => void;
   setVarState: (varState: VarState) => void;
   setCareer: (career: CareerState) => void;
+  setPolish: (polish: PolishHud) => void;
 };
 
 export const gameStateStore = createStore<GameState>((set) => ({
@@ -86,18 +89,19 @@ export const gameStateStore = createStore<GameState>((set) => ({
   assistants: createAssistants(),
   varState: createVarState(),
   career: createCareer(),
+  polish: polishHud(createPolish()),
 
   addGoal: (team) => set((s) => ({ score: { ...s.score, [team]: s.score[team] + 1 } })),
   setTime: (time) => set({ time }),
   setMatchClock: (matchClock) => set({ matchClock }),
   addCard: (card) => set((s) => ({ cards: [...s.cards, card] })),
-  setPossession: (playerIndex) => set({ possession: playerIndex }),
-  setCurrentEvent: (event) => set({ currentEvent: event }),
+  setPossession: (possession) => set({ possession }),
+  setCurrentEvent: (currentEvent) => set({ currentEvent }),
   setReplayState: (replayState) => set({ replayState }),
   setPaused: (paused) => set({ paused }),
   setMatchPhase: (matchPhase) => set({ matchPhase }),
 
-  setPendingFoul: (event) => set({ pendingFoul: event }),
+  setPendingFoul: (pendingFoul) => set({ pendingFoul }),
   openDecisionWindow: (reactionTime) =>
     set({ decisionWindowOpen: true, paused: true, pendingReactionTime: reactionTime }),
   closeDecisionWindow: () =>
@@ -112,4 +116,5 @@ export const gameStateStore = createStore<GameState>((set) => ({
   setAssistants: (assistants) => set({ assistants }),
   setVarState: (varState) => set({ varState }),
   setCareer: (career) => set({ career }),
+  setPolish: (polish) => set({ polish }),
 }));

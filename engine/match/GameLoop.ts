@@ -60,6 +60,19 @@ import {
 } from "../referee/assistants";
 import { createVarState, enqueueVar, type VarState } from "../referee/var";
 import { progressCareer } from "../referee/career";
+import {
+  applyBallRain,
+  clearBroadcast,
+  createPolish,
+  noteBroadcastReplay,
+  onPolishCard,
+  onPolishEvent,
+  polishHud,
+  stepPolish,
+  tryAutoSave,
+  tryLoadSave,
+  type PolishState,
+} from "../polish";
 import { createTeams } from "../team/createTeams";
 import { Team, type TeamId } from "../team/Team";
 import { EventBus } from "./EventBus";
@@ -143,15 +156,33 @@ export class GameLoop {
   private cardBook = createCardBook();
   private assistants: AssistantState = createAssistants();
   private varReviews: VarState = createVarState();
+  private polish: PolishState = createPolish(
+    tryLoadSave()?.difficulty ?? "normal",
+  );
   readonly matchState = new MatchStateMachine();
   readonly bus = new EventBus();
 
   constructor() {
     wireStoreToEvents(this.bus);
+    this.bus.subscribe((event) => {
+      this.polish = onPolishEvent(this.polish, event);
+      gameStateStore.getState().setPolish(polishHud(this.polish));
+    });
 
     const teams = createTeams();
     this.homeTeam = teams.home;
     this.awayTeam = teams.away;
+    // Difficulty scales pressing aggression.
+    const mul = this.polish.params.pressingMul;
+    this.homeTeam.tactics = {
+      ...this.homeTeam.tactics,
+      pressing: Math.min(1, this.homeTeam.tactics.pressing * mul),
+    };
+    this.awayTeam.tactics = {
+      ...this.awayTeam.tactics,
+      pressing: Math.min(1, this.awayTeam.tactics.pressing * mul),
+    };
+    gameStateStore.getState().setPolish(polishHud(this.polish));
 
     this.matchState.subscribe((state, previous) => {
       gameStateStore.getState().setMatchPhase(state);
@@ -175,6 +206,7 @@ export class GameLoop {
   }
 
   resolveRefereeDecision(action: DecisionAction) {
+    const cardsBefore = gameStateStore.getState().cards.length;
     makeDecision(action, this.matchState, {
       cardBook: this.cardBook,
       onDisciplinary: (playerIndex, sentOff) => {
@@ -186,6 +218,12 @@ export class GameLoop {
         }
       },
     });
+    const cards = gameStateStore.getState().cards.slice(cardsBefore);
+    for (const c of cards) {
+      const against = this.players[c.playerIndex]?.team.id ?? "home";
+      this.polish = onPolishCard(this.polish, c, this.clock, against);
+    }
+    if (cards.length) gameStateStore.getState().setPolish(polishHud(this.polish));
   }
 
   getTeams(): { home: Team; away: Team } {
@@ -288,9 +326,31 @@ export class GameLoop {
     this.updateReferee();
     this.updateWhistle();
     this.generateEvents();
+    this.stepMatchPolish(delta);
     this.recordReplayFrame();
     // Render happens after this callback returns — react-three-fiber's own
     // render pass. Nothing for the engine to do here.
+  }
+
+  private stepMatchPolish(delta: number) {
+    const store = gameStateStore.getState();
+    const clock = store.matchClock;
+    const stepped = stepPolish(this.polish, this.clock, delta, {
+      restartActive: this.restart !== null,
+      scoreDiff: store.score.home - store.score.away,
+      addedMinutes: clock.addedTime,
+    });
+    this.polish = stepped.polish;
+    if (stepped.ratingDelta !== 0) {
+      store.adjustRating(stepped.ratingDelta);
+    }
+    this.polish = tryAutoSave(this.polish, this.clock, {
+      score: store.score,
+      time: store.time,
+      careerTier: store.career.tier,
+      matchesCompleted: store.career.matchesCompleted,
+    });
+    store.setPolish(polishHud(this.polish));
   }
 
   // Press-to-trigger instant replay: freezes live play and replays the last
@@ -305,12 +365,16 @@ export class GameLoop {
     this.replayFrames = this.replayBuffer.snapshotFrames();
     this.replayIndex = 0;
     this.replayElapsed = 0;
+    this.polish = noteBroadcastReplay(this.polish, this.clock);
+    store.setPolish(polishHud(this.polish));
     store.setReplayState("replay");
     store.setPaused(true);
     return true;
   }
 
   private endReplay() {
+    this.polish = clearBroadcast(this.polish);
+    gameStateStore.getState().setPolish(polishHud(this.polish));
     gameStateStore.getState().setReplayState("live");
     gameStateStore.getState().setPaused(!this.matchState.isPlaying());
     this.replayFrames = [];
@@ -420,6 +484,11 @@ export class GameLoop {
         .map((pos, j) => (j !== i ? pos : null))
         .filter((p): p is { x: number; z: number } => !!p);
       stepPlayerAI(player.body, player.ai, delta, neighbors);
+      // Injury limping: soft speed cut.
+      if (this.polish.injuries.limping.includes(i)) {
+        const lv = player.body.linvel();
+        player.body.setLinvel({ x: lv.x * 0.7, y: lv.y, z: lv.z * 0.7 }, true);
+      }
     });
   }
 
@@ -458,7 +527,11 @@ export class GameLoop {
     this.checkBallOutOfPlay();
 
     const v = this.ball.linvel();
-    this.previousBallVelocity = { x: v.x, z: v.z };
+    const wet = applyBallRain(this.polish, v, delta);
+    if (wet.x !== v.x || wet.z !== v.z) {
+      this.ball.setLinvel(wet, true);
+    }
+    this.previousBallVelocity = { x: wet.x, z: wet.z };
   }
 
   private stepActiveRestart(delta: number) {
@@ -647,7 +720,7 @@ export class GameLoop {
       playerB: candidate.playerB,
       position: candidate.position,
       force: candidate.force,
-      foulScore: candidate.foulScore,
+      foulScore: Math.min(1, candidate.foulScore * this.polish.params.foulSensitivity),
       severity: candidate.severity,
       visionQuality: vision.quality,
       tackle: {

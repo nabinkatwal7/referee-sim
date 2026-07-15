@@ -24,6 +24,7 @@ const HUD = () => {
   const replayState = useGameStore((state) => state.replayState);
   const matchPhase = useGameStore((state) => state.matchPhase);
   const varState = useGameStore((state) => state.varState);
+  const polish = useGameStore((state) => state.polish);
 
   const phaseLabel = PHASE_LABEL[matchPhase];
   const addedHint =
@@ -36,6 +37,8 @@ const HUD = () => {
   const arHint = assistants.left?.kind || assistants.right?.kind
     ? `AR: ${assistants.left?.kind ?? ""}${assistants.left && assistants.right ? " / " : ""}${assistants.right?.kind ?? ""}`
     : null;
+
+  const stats = polish.stats;
 
   return (
     <div
@@ -67,6 +70,25 @@ const HUD = () => {
         {CAREER_LABEL[career.tier]}
         {arHint ? ` · ${arHint}` : ""}
         {varState.queue.length > 0 ? ` · VAR queue: ${varState.queue.length}` : ""}
+        {` · ${polish.difficulty} · ${polish.weather}`}
+        {polish.crowdPressure > 0.4 ? ` · Crowd ${Math.round(polish.crowdPressure * 100)}%` : ""}
+      </div>
+      {polish.commentary && (
+        <div style={{ marginTop: 6, fontSize: 14, fontStyle: "italic", opacity: 0.95 }}>
+          “{polish.commentary}”
+        </div>
+      )}
+      {(polish.fourthBoard || polish.protest || polish.timeWaste) && (
+        <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+          {polish.fourthBoard ? `4th: ${polish.fourthBoard}` : ""}
+          {polish.protest ? ` · ${polish.protest}` : ""}
+          {polish.timeWaste ? ` · ${polish.timeWaste}` : ""}
+        </div>
+      )}
+      <div style={{ opacity: 0.6, fontSize: 11, marginTop: 2 }}>
+        P{stats.passes} S{stats.shots} T{stats.tackles} F{stats.fouls} · Subs {polish.subsUsed}
+        {polish.injuries > 0 ? ` · Inj ${polish.injuries}` : ""}
+        {` · Mgr ${polish.managers.home}/${polish.managers.away}`}
       </div>
       {phaseLabel && (
         <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{phaseLabel}</div>
@@ -81,7 +103,9 @@ const HUD = () => {
         </div>
       )}
       {replayState === "replay" && (
-        <div style={{ fontSize: 20, fontWeight: 700, color: "#ff5252" }}>⟲ REPLAY</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: "#ff5252" }}>
+          ⟲ {polish.broadcast ?? "REPLAY"}
+        </div>
       )}
       {replayState === "var" && (
         <div style={{ fontSize: 20, fontWeight: 700, color: "#4fc3f7" }}>VAR CHECK</div>

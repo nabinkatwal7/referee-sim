@@ -3,9 +3,13 @@
 
 import type { Role } from "./Player/stats";
 
+export type { Role };
+
 export type Side = "A" | "B";
 
 export type FormationName = "4-4-2" | "4-3-3" | "3-5-2" | "5-3-2";
+/** @deprecated alias — prefer FormationName */
+export type FormationId = FormationName;
 
 export type FormationSlot = {
   role: Role;

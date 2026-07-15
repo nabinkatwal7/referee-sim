@@ -20,7 +20,7 @@ const buildRoster = (
   formationId: FormationId,
   attackDir: 1 | -1,
 ): TeamPlayer[] => {
-  const slots = FORMATIONS[formationId];
+  const slots = FORMATIONS[formationId].slots;
   return slots.map((slot, i) => {
     const home = homePositionForSlot(slot, side);
     const phases = phasePositionsForHome(home, slot.role, attackDir);
@@ -55,7 +55,7 @@ export const createTeams = (): Teams => {
     "Home",
     HOME_COLOR,
     homeFormation,
-    FORMATIONS[homeFormation],
+    FORMATIONS[homeFormation].slots,
     homePlayers,
     1,
     clampTactics({ ...DEFAULT_TACTICS, pressing: 0.6, width: 0.7 }),
@@ -65,7 +65,7 @@ export const createTeams = (): Teams => {
     "Away",
     AWAY_COLOR,
     awayFormation,
-    FORMATIONS[awayFormation],
+    FORMATIONS[awayFormation].slots,
     awayPlayers,
     -1,
     clampTactics({ ...DEFAULT_TACTICS, compactness: 0.7, lineHeight: 0.4 }),
