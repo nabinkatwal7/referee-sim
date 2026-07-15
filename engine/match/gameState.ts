@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { PossibleFoulEvent } from "./events";
 
 export type Score = { home: number; away: number };
 export type Card = { playerIndex: number; type: "yellow" | "red" };
@@ -13,6 +14,12 @@ type GameState = {
   replayState: ReplayState;
   paused: boolean;
 
+  // Whistle System (Phase 18) + Match Rating (Phase 19)
+  pendingFoul: PossibleFoulEvent | null; // an incident awaiting the player's whistle
+  decisionWindowOpen: boolean;
+  pendingReactionTime: number | null; // seconds between the incident and the whistle being blown
+  rating: number; // starts at 10.0
+
   addGoal: (team: "home" | "away") => void;
   setTime: (time: number) => void;
   addCard: (card: Card) => void;
@@ -20,13 +27,18 @@ type GameState = {
   setCurrentEvent: (event: string | null) => void;
   setReplayState: (state: ReplayState) => void;
   setPaused: (paused: boolean) => void;
+
+  setPendingFoul: (event: PossibleFoulEvent | null) => void;
+  openDecisionWindow: (reactionTime: number) => void;
+  closeDecisionWindow: () => void;
+  adjustRating: (delta: number) => void;
 };
 
 // Game state only — score, clock, cards, possession, the current event,
-// replay state, pause. Positions/physics belong to the engine (GameLoop),
-// not here; the engine writes into this store via its vanilla API
-// (getState/setState), which is why this stays usable from a plain class
-// with no React import.
+// replay state, pause (plus the whistle/rating fields this feature needs).
+// Positions/physics belong to the engine (GameLoop), not here; the engine
+// writes into this store via its vanilla API (getState/setState), which is
+// why this stays usable from a plain class with no React import.
 export const useGameStore = create<GameState>((set) => ({
   score: { home: 0, away: 0 },
   time: 0,
@@ -36,6 +48,11 @@ export const useGameStore = create<GameState>((set) => ({
   replayState: "live",
   paused: false,
 
+  pendingFoul: null,
+  decisionWindowOpen: false,
+  pendingReactionTime: null,
+  rating: 10.0,
+
   addGoal: (team) => set((s) => ({ score: { ...s.score, [team]: s.score[team] + 1 } })),
   setTime: (time) => set({ time }),
   addCard: (card) => set((s) => ({ cards: [...s.cards, card] })),
@@ -43,4 +60,11 @@ export const useGameStore = create<GameState>((set) => ({
   setCurrentEvent: (event) => set({ currentEvent: event }),
   setReplayState: (replayState) => set({ replayState }),
   setPaused: (paused) => set({ paused }),
+
+  setPendingFoul: (event) => set({ pendingFoul: event }),
+  openDecisionWindow: (reactionTime) =>
+    set({ decisionWindowOpen: true, paused: true, pendingReactionTime: reactionTime }),
+  closeDecisionWindow: () =>
+    set({ decisionWindowOpen: false, paused: false, pendingFoul: null, pendingReactionTime: null }),
+  adjustRating: (delta) => set((s) => ({ rating: Math.max(0, Math.min(10, s.rating + delta)) })),
 }));

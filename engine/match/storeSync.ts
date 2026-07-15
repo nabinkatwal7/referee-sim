@@ -29,6 +29,9 @@ const describe = (event: MatchEvent): string => {
       return event.given ? `PENALTY to team ${event.team}!` : "Penalty appeal waved away";
     case "offside":
       return event.given ? `OFFSIDE: #${event.by}` : `Offside appeal waved away (#${event.by})`;
+    case "possibleFoul":
+      // Deliberately vague — no severity/force leaked. The player decides.
+      return `Possible incident: #${event.playerA} / #${event.playerB} — press SPACE to review`;
   }
 };
 
@@ -38,6 +41,16 @@ const describe = (event: MatchEvent): string => {
 export const wireStoreToEvents = (bus: EventBus) => {
   return bus.subscribe((event) => {
     const store = useGameStore.getState();
+
+    if (event.kind === "possibleFoul") {
+      // Only one incident can be under review at a time; ignore new ones
+      // (and don't spam the HUD with them) while one's already pending.
+      if (store.pendingFoul) return;
+      store.setPendingFoul(event);
+      store.setCurrentEvent(describe(event));
+      return;
+    }
+
     store.setCurrentEvent(describe(event));
 
     switch (event.kind) {

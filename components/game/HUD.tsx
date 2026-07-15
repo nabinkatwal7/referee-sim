@@ -15,6 +15,9 @@ const HUD = () => {
   const time = useGameStore((state) => state.time);
   const currentEvent = useGameStore((state) => state.currentEvent);
   const paused = useGameStore((state) => state.paused);
+  const rating = useGameStore((state) => state.rating);
+  const pendingFoul = useGameStore((state) => state.pendingFoul);
+  const decisionWindowOpen = useGameStore((state) => state.decisionWindowOpen);
 
   return (
     <div
@@ -30,9 +33,15 @@ const HUD = () => {
       }}
     >
       <div>
-        {score.home} - {score.away} &nbsp; {formatClock(time)} {paused && "(PAUSED)"}
+        {score.home} - {score.away} &nbsp; {formatClock(time)} &nbsp; Rating: {rating.toFixed(1)}{" "}
+        {paused && "(PAUSED)"}
       </div>
       {currentEvent && <div style={{ opacity: 0.8, fontSize: 13 }}>{currentEvent}</div>}
+      {pendingFoul && !decisionWindowOpen && (
+        <div style={{ opacity: 0.9, fontSize: 13, color: "#ffd54f" }}>
+          Incident — press SPACE to review
+        </div>
+      )}
     </div>
   );
 };

@@ -10,6 +10,8 @@ import HUD from "./HUD";
 import Scene from "./Scene";
 import Skybox from "./Skybox";
 import ThirdPersonCamera from "./ThirdPersonCamera";
+import Whistle from "./Whistle";
+import WhistleListener from "./WhistleListener";
 import { REFEREE_START_POSITION } from "./pitchDimensions";
 
 const Game = () => {
@@ -50,8 +52,10 @@ const Game = () => {
             <Scene gameLoop={gameLoop} />
           </Physics>
           <GameLoopRunner gameLoop={gameLoop} />
+          <WhistleListener />
         </Canvas>
         <HUD />
+        <Whistle />
       </KeyboardControls>
     </div>
   );

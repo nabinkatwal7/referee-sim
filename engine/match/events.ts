@@ -42,6 +42,20 @@ export type OffsideEvent = Base & {
   visionQuality: number;
 };
 
+// Player collision, no ball involved, high force -> the engine flags it but
+// does NOT decide anything. No `given` field here: this is handed to the
+// human player via the Whistle System (engine/referee/whistle.ts) instead of
+// being auto-resolved like Foul/Penalty/Offside.
+export type PossibleFoulEvent = Base & {
+  kind: "possibleFoul";
+  playerA: number;
+  playerB: number;
+  position: Vec2;
+  force: number;
+  severity: "clean" | "foul" | "reckless";
+  visionQuality: number;
+};
+
 export type MatchEvent =
   | PassEvent
   | TackleEvent
@@ -52,4 +66,5 @@ export type MatchEvent =
   | CornerEvent
   | FoulEvent
   | PenaltyEvent
-  | OffsideEvent;
+  | OffsideEvent
+  | PossibleFoulEvent;

@@ -11,8 +11,10 @@ import {
 } from "../../entities/Player/brain";
 import { checkBoundary } from "../../entities/Ball/boundary";
 import { detectCollision } from "../../entities/Ball/collision";
+import { detectPlayerCollisions } from "../../entities/Player/collisionDetector";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
+import { expirePendingFoul } from "../referee/whistle";
 import { EventBus } from "./EventBus";
 import { useGameStore } from "./gameState";
 import { wireStoreToEvents } from "./storeSync";
@@ -83,7 +85,9 @@ export class GameLoop {
     this.updateAI(delta);
     this.updatePhysics();
     this.updateBall(delta);
+    this.updateCollisions();
     this.updateReferee();
+    this.updateWhistle();
     this.generateEvents();
     // Render happens after this callback returns — react-three-fiber's own
     // render pass. Nothing for the engine to do here.
@@ -176,6 +180,33 @@ export class GameLoop {
         break;
       }
     }
+  }
+
+  private updateCollisions() {
+    if (!this.ball) return;
+    // Only one incident under review at a time — don't bother detecting
+    // more while one's still awaiting the player's whistle.
+    if (useGameStore.getState().pendingFoul) return;
+
+    const ballPos = this.ball.translation();
+    const candidate = detectPlayerCollisions(this.players, ballPos);
+    if (!candidate) return;
+
+    const vision = this.evaluateVision(candidate.position);
+    this.bus.emit({
+      kind: "possibleFoul",
+      playerA: candidate.playerA,
+      playerB: candidate.playerB,
+      position: candidate.position,
+      force: candidate.force,
+      severity: candidate.severity,
+      visionQuality: vision.quality,
+      at: this.clock,
+    });
+  }
+
+  private updateWhistle() {
+    expirePendingFoul(this.clock);
   }
 
   private evaluateVision(position: { x: number; z: number }): Vision {
