@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { RapierRigidBody } from "@react-three/rapier";
+import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
 import type { Camera } from "three";
 
 const WALK_SPEED = 3.5;

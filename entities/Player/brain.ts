@@ -1,5 +1,5 @@
 import { MathUtils } from "three";
-import type { RapierRigidBody } from "@react-three/rapier";
+import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
 import {
   PITCH_LENGTH,
   PENALTY_BOX_DEPTH,

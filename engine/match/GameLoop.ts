@@ -1,4 +1,4 @@
-import type { RapierRigidBody } from "@react-three/rapier";
+import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import type { Camera } from "three";
 import { createPlayerAIState, stepPlayerAI, type PlayerAIState } from "../../entities/Player/ai";

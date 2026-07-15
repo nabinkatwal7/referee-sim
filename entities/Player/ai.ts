@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { RapierRigidBody } from "@react-three/rapier";
+import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
 
 const WALK_SPEED = 2.5;
 const RUN_SPEED = 6;

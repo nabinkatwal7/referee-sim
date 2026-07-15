@@ -1,4 +1,4 @@
-import type { RapierRigidBody } from "@react-three/rapier";
+import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
 
 const DIRECTION_CHANGE_THRESHOLD = Math.PI / 3; // 60 degrees
 const MIN_SPEED_FOR_COLLISION = 2;
