@@ -17,6 +17,7 @@ import { computeVision, decideCall, type Vision } from "../referee/vision";
 import { expirePendingFoul } from "../referee/whistle";
 import { EventBus } from "./EventBus";
 import { useGameStore } from "./gameState";
+import { ReplayBuffer, restoreSnapshot, type FrameSnapshot } from "./replay";
 import { wireStoreToEvents } from "./storeSync";
 
 type PlayerHandle = {
@@ -32,6 +33,8 @@ type RefereeHandle = {
 };
 
 const refereeDir = new THREE.Vector3();
+
+const toTuple = (v: { x: number; y: number; z: number }): [number, number, number] => [v.x, v.y, v.z];
 
 // Pure engine: no React, no hooks, no component state — just plain class
 // fields mutated each tick. One instance lives for the whole match; the only
@@ -51,6 +54,10 @@ export class GameLoop {
   private brain: BrainState = createBrainState();
   private lastTouchTeam: Team | null = null;
   private previousBallVelocity = { x: 0, z: 0 };
+  private replayBuffer = new ReplayBuffer();
+  private replayFrames: FrameSnapshot[] = [];
+  private replayIndex = 0;
+  private replayElapsed = 0;
   readonly bus = new EventBus();
 
   constructor() {
@@ -79,6 +86,11 @@ export class GameLoop {
   }
 
   tick(delta: number) {
+    if (useGameStore.getState().replayState === "replay") {
+      this.updateReplayPlayback(delta);
+      return;
+    }
+
     if (useGameStore.getState().paused) return;
 
     this.updateClock(delta);
@@ -89,8 +101,77 @@ export class GameLoop {
     this.updateReferee();
     this.updateWhistle();
     this.generateEvents();
+    this.recordReplayFrame();
     // Render happens after this callback returns — react-three-fiber's own
     // render pass. Nothing for the engine to do here.
+  }
+
+  // Press-to-trigger instant replay: freezes live play and replays the last
+  // 15 seconds of recorded snapshots, then resumes automatically. Refuses to
+  // start mid-whistle-decision or with nothing recorded yet.
+  startReplay(): boolean {
+    const store = useGameStore.getState();
+    if (store.replayState === "replay" || store.decisionWindowOpen || this.replayBuffer.isEmpty) {
+      return false;
+    }
+
+    this.replayFrames = this.replayBuffer.snapshotFrames();
+    this.replayIndex = 0;
+    this.replayElapsed = 0;
+    store.setReplayState("replay");
+    store.setPaused(true);
+    return true;
+  }
+
+  private endReplay() {
+    useGameStore.getState().setReplayState("live");
+    useGameStore.getState().setPaused(false);
+    this.replayFrames = [];
+    this.replayIndex = 0;
+    this.replayElapsed = 0;
+  }
+
+  private updateReplayPlayback(delta: number) {
+    if (this.replayFrames.length === 0) {
+      this.endReplay();
+      return;
+    }
+
+    this.replayElapsed += delta;
+    const startT = this.replayFrames[0].t;
+    const target = startT + this.replayElapsed;
+
+    while (
+      this.replayIndex < this.replayFrames.length - 1 &&
+      this.replayFrames[this.replayIndex + 1].t <= target
+    ) {
+      this.replayIndex++;
+    }
+
+    restoreSnapshot(this.replayFrames[this.replayIndex], this.players, this.ball);
+
+    const finished =
+      this.replayIndex >= this.replayFrames.length - 1 &&
+      target >= this.replayFrames[this.replayFrames.length - 1].t;
+    if (finished) this.endReplay();
+  }
+
+  private recordReplayFrame() {
+    const players = this.players.map((player) =>
+      player
+        ? {
+            position: toTuple(player.body.translation()),
+            velocity: toTuple(player.body.linvel()),
+            fsmState: player.ai.fsmState,
+          }
+        : null,
+    );
+
+    const ball = this.ball
+      ? { position: toTuple(this.ball.translation()), velocity: toTuple(this.ball.linvel()) }
+      : null;
+
+    this.replayBuffer.record({ t: this.clock, players, ball });
   }
 
   private updateClock(delta: number) {

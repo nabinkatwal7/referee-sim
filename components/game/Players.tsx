@@ -1,9 +1,9 @@
 import { useMemo } from "react";
+import type { GameLoop } from "../../engine/match/GameLoop";
 import Player from "../../entities/Player";
 import type { Team } from "../../entities/Player/brain";
 import { FORMATION_4_3_3, homePositionForSlot } from "../../entities/formation";
 import { generateSquadNames } from "../../entities/names";
-import type { GameLoop } from "../../engine/match/GameLoop";
 
 const TEAM_A_COLOR = "#1976d2"; // blue
 const TEAM_B_COLOR = "#c62828"; // red

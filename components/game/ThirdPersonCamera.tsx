@@ -1,8 +1,8 @@
-import { useRef } from "react";
-import { useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { useFrame } from "@react-three/fiber";
+import { useRef } from "react";
 import * as THREE from "three";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { GameLoop } from "../../engine/match/GameLoop";
 
 // Higher = tighter follow, lower = more lag. Framerate-independent (uses delta).

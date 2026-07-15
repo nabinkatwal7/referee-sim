@@ -18,6 +18,7 @@ const HUD = () => {
   const rating = useGameStore((state) => state.rating);
   const pendingFoul = useGameStore((state) => state.pendingFoul);
   const decisionWindowOpen = useGameStore((state) => state.decisionWindowOpen);
+  const replayState = useGameStore((state) => state.replayState);
 
   return (
     <div
@@ -41,6 +42,9 @@ const HUD = () => {
         <div style={{ opacity: 0.9, fontSize: 13, color: "#ffd54f" }}>
           Incident — press SPACE to review
         </div>
+      )}
+      {replayState === "replay" && (
+        <div style={{ fontSize: 20, fontWeight: 700, color: "#ff5252" }}>⟲ REPLAY</div>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import GameLoopRunner from "../../engine/match/GameLoopRunner";
 import { useGameStore } from "../../engine/match/gameState";
 import { REFEREE_KEYBOARD_MAP } from "../../entities/Referee/controls";
 import HUD from "./HUD";
+import ReplayListener from "./ReplayListener";
 import Scene from "./Scene";
 import Skybox from "./Skybox";
 import ThirdPersonCamera from "./ThirdPersonCamera";
@@ -53,6 +54,7 @@ const Game = () => {
           </Physics>
           <GameLoopRunner gameLoop={gameLoop} />
           <WhistleListener />
+          <ReplayListener gameLoop={gameLoop} />
         </Canvas>
         <HUD />
         <Whistle />

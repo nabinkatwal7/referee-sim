@@ -13,7 +13,12 @@ const Skybox = () => {
     <>
       <color attach="background" args={["#8fc7ea"]} />
       <fog attach="fog" args={["#bcd9ea", 250, 900]} />
-      <Sky sunPosition={[80, 140, 80]} turbidity={4} rayleigh={1.5} distance={SKY_DISTANCE} />
+      <Sky
+        sunPosition={[80, 140, 80]}
+        turbidity={4}
+        rayleigh={1.5}
+        distance={SKY_DISTANCE}
+      />
       <Environment files="/hdri/stadium_01_1k.hdr" />
     </>
   );

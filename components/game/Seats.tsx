@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import {
-  PITCH_WIDTH,
   PITCH_LENGTH,
-  STAND_TIERS,
-  STAND_TIER_HEIGHT,
-  STAND_TIER_DEPTH,
-  STAND_GAP_FROM_PITCH,
+  PITCH_WIDTH,
   STAND_DEPTH_TOTAL,
+  STAND_GAP_FROM_PITCH,
+  STAND_TIERS,
+  STAND_TIER_DEPTH,
+  STAND_TIER_HEIGHT,
 } from "./pitchDimensions";
 
 // Blaugrana-inspired tier colors: mostly garnet, a blue band, one patterned
@@ -32,7 +32,9 @@ const TIER_COLORS: (string | typeof PATTERN)[] = [
   GOLD,
 ];
 if (TIER_COLORS.length !== STAND_TIERS) {
-  throw new Error(`TIER_COLORS must have exactly STAND_TIERS (${STAND_TIERS}) entries`);
+  throw new Error(
+    `TIER_COLORS must have exactly STAND_TIERS (${STAND_TIERS}) entries`,
+  );
 }
 const PATTERN_COLORS = [BLUE, GOLD];
 const PATTERN_SEGMENTS = 16;
@@ -91,7 +93,8 @@ const buildTiers = (side: Side): TierSpec[] => {
   const isLengthwise = side === "north" || side === "south";
   // Full outer footprint (not just the pitch-side span) so adjacent stands
   // meet at the corners instead of leaving the bowl open.
-  const standLength = (isLengthwise ? PITCH_WIDTH : PITCH_LENGTH) + 2 * STAND_DEPTH_TOTAL;
+  const standLength =
+    (isLengthwise ? PITCH_WIDTH : PITCH_LENGTH) + 2 * STAND_DEPTH_TOTAL;
 
   return TIER_COLORS.flatMap((color, i) => {
     const height = STAND_TIER_HEIGHT * (i + 1);

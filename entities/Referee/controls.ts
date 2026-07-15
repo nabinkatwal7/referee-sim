@@ -5,6 +5,7 @@ export const Controls = {
   right: "right",
   sprint: "sprint",
   whistle: "whistle",
+  replay: "replay",
 } as const;
 
 export type Controls = (typeof Controls)[keyof typeof Controls];
@@ -16,4 +17,5 @@ export const REFEREE_KEYBOARD_MAP = [
   { name: Controls.right, keys: ["KeyD", "ArrowRight"] },
   { name: Controls.sprint, keys: ["ShiftLeft", "ShiftRight"] },
   { name: Controls.whistle, keys: ["Space"] },
+  { name: Controls.replay, keys: ["KeyR"] },
 ];

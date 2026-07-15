@@ -1,6 +1,6 @@
+import type { GameLoop } from "../../engine/match/GameLoop";
 import Ball from "../../entities/Ball";
 import Referee from "../../entities/Referee";
-import type { GameLoop } from "../../engine/match/GameLoop";
 import Goals from "./Goals";
 import Ground from "./Ground";
 import Lines from "./Lines";
