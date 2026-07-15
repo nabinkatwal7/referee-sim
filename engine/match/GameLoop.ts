@@ -1,7 +1,12 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import * as THREE from "three";
 import type { Camera } from "three";
-import { createPlayerAIState, stepPlayerAI, type PlayerAIState } from "../../entities/Player/ai";
+import {
+  createPlayerAIState,
+  stepPlayerAI,
+  type PlayerAIState,
+  type PlayerFSMState,
+} from "../../entities/Player/ai";
 import {
   createBrainState,
   stepMatchBrain,
@@ -83,6 +88,21 @@ export class GameLoop {
 
   getReferee(): RapierRigidBody | null {
     return this.referee?.body ?? null;
+  }
+
+  // Read-only snapshot for the visual layer to pick an animation clip —
+  // movement/FSM logic itself lives entirely in updateAI, this is just a peek.
+  getPlayerAnimationState(index: number): { fsmState: PlayerFSMState; speed: number } | null {
+    const player = this.players[index];
+    if (!player) return null;
+    const v = player.body.linvel();
+    return { fsmState: player.ai.fsmState, speed: Math.hypot(v.x, v.z) };
+  }
+
+  getRefereeSpeed(): number {
+    if (!this.referee) return 0;
+    const v = this.referee.body.linvel();
+    return Math.hypot(v.x, v.z);
   }
 
   tick(delta: number) {

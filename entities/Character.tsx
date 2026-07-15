@@ -52,7 +52,11 @@ const Character = ({ color = "#1976d2", animation }: Props) => {
     };
   }, [actions, animation]);
 
-  return <primitive ref={group} object={clone} scale={1.3} position={[0, -0.85, 0]} />;
+  // The model's own root sits at ground level (feet at local y=0), but our
+  // RigidBody origin is mid-body height (matching the old capsule's center,
+  // baked into home positions/wander targets elsewhere) — shift down to
+  // compensate rather than change that convention everywhere.
+  return <primitive ref={group} object={clone} position={[0, -1, 0]} />;
 };
 
 export default Character;
