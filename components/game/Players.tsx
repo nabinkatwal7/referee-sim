@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { GameLoop } from "../../engine/match/GameLoop";
 import type { Team } from "../../engine/team/Team";
+import type { Role } from "../../entities/formation";
 import Player from "../../entities/Player";
 
 type RosterEntry = {
@@ -9,7 +10,7 @@ type RosterEntry = {
   team: Team;
   color: string;
   name: string;
-  role: string;
+  role: Role;
 };
 
 const flattenRoster = (home: Team, away: Team): RosterEntry[] => [

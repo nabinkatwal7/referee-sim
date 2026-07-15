@@ -20,7 +20,9 @@ export type PlayerFSMState =
   | "pass"
   | "shoot"
   | "tackle"
-  | "celebrate";
+  | "celebrate"
+  | "press"
+  | "recover";
 
 const FREEZE_STATES = new Set<PlayerFSMState>([
   "pass",
@@ -29,8 +31,13 @@ const FREEZE_STATES = new Set<PlayerFSMState>([
   "celebrate",
 ]);
 
-// Brain owns linvel for these — wander must not overwrite approach/dribble.
-const BRAIN_DRIVEN = new Set<PlayerFSMState>(["receive", "dribble"]);
+// Brain owns linvel for these — wander must not overwrite.
+const BRAIN_DRIVEN = new Set<PlayerFSMState>([
+  "receive",
+  "dribble",
+  "press",
+  "recover",
+]);
 
 export type PlayerAIState = {
   home: [number, number, number];

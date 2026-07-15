@@ -2,6 +2,7 @@ import type { RapierRigidBody } from "@react-three/rapier";
 import { MathUtils } from "three";
 import { PENALTY_BOX_DEPTH, PENALTY_BOX_WIDTH, PITCH_LENGTH } from "../../components/game/pitchDimensions";
 import type { Team, TeamId } from "../../engine/team/Team";
+import type { Role } from "../formation";
 import {
   canReceive,
   findNearestPlayer,
@@ -11,11 +12,19 @@ import {
 import { enterReactionState, type PlayerAIState } from "./ai";
 import { decideAction } from "./decide";
 import {
+  pickMarkTarget,
+  stepDefendAI,
+} from "./defend";
+import {
   applySteer,
   carryBallAhead,
   dribbleSteer,
   moveSteer,
 } from "./dribble";
+import {
+  stepGoalkeeper,
+  type GoalkeeperAIState,
+} from "./goalkeeper";
 import { approachBall, faceGoal, isBallArriving } from "./receive";
 
 const MIN_PASS_SPEED = 6;
@@ -24,6 +33,7 @@ const MAX_PASS_SPEED = 14;
 const TACKLE_RANGE = 3;
 const FOUL_PROBABILITY = 0.25;
 const TACKLE_WIN_PROBABILITY = 0.4;
+const DEFEND_TACKLE_WIN = 0.35;
 
 const REACTION_DURATION = 0.5;
 const CELEBRATE_DURATION = 3;
@@ -35,8 +45,12 @@ const OWN_GOAL_LINE = PITCH_LENGTH / 2;
 export type PlayerRef = {
   body: RapierRigidBody;
   team: Team;
+  role: Role;
   ai: PlayerAIState;
+  keeper: GoalkeeperAIState | null;
 };
+
+const isGK = (p: PlayerRef) => p.role === "GK" && p.keeper !== null;
 
 export type BrainState = {
   possessor: number | null;
@@ -166,26 +180,33 @@ export const stepMatchBrain = (
   const ballXZ: Pos2 = { x: ballPos.x, z: ballPos.z };
   const ballVelXZ: Pos2 = { x: ballVel.x, z: ballVel.z };
 
-  // —— Loose ball: approach → receive (no teleport) ——
-  if (state.possessor === null) {
-    const nearest =
-      nearestToBall ??
-      findNearestPlayer(ballXZ, players.length, (i) => {
-        const player = players[i];
-        return player ? posOf(player) : null;
-      });
+  // —— Goalkeepers (separate SM — never field-player logic) ——
+  const keeperEvent = stepKeepers(ball, players, state, delta);
+  if (keeperEvent) return keeperEvent;
 
-    // Clear stale receive on anyone who isn't the current approach candidate.
+  // GK still holding — field brain stays out, but outfielders still defend/shape.
+  if (state.possessor !== null) {
+    const holder = players[state.possessor];
+    if (holder && isGK(holder)) {
+      stepFieldDefense(ball, players, state, ballXZ, ballVelXZ);
+      return null;
+    }
+  }
+
+  // —— Loose ball: field approach → receive (GKs excluded) ——
+  if (state.possessor === null) {
+    const nearest = fieldNearest(players, ballXZ, nearestToBall);
+
     for (let i = 0; i < players.length; i++) {
       const p = players[i];
-      if (p && p.ai.fsmState === "receive" && i !== nearest?.index) {
+      if (p && !isGK(p) && p.ai.fsmState === "receive" && i !== nearest?.index) {
         p.ai.fsmState = "move";
       }
     }
 
     if (nearest) {
       const candidate = players[nearest.index];
-      if (candidate) {
+      if (candidate && !isGK(candidate)) {
         const p = posOf(candidate);
         if (isBallArriving(p, ballXZ, ballVelXZ) && !canReceive(ballSpeed, nearest.dist)) {
           approachBall(candidate.body, candidate.ai, ballXZ);
@@ -193,17 +214,25 @@ export const stepMatchBrain = (
       }
     }
 
-    if (!nearest || !canReceive(ballSpeed, nearest.dist)) return null;
+    if (!nearest || !canReceive(ballSpeed, nearest.dist)) {
+      stepFieldDefense(ball, players, state, ballXZ, ballVelXZ);
+      return null;
+    }
 
     const receiverIndex = nearest.index;
     const receiver = players[receiverIndex];
-    if (!receiver) return null;
+    if (!receiver || isGK(receiver)) {
+      stepFieldDefense(ball, players, state, ballXZ, ballVelXZ);
+      return null;
+    }
 
     let winnerIndex = receiverIndex;
     let outcome: MatchEvent | null = null;
 
     players.forEach((player, i) => {
-      if (outcome || !player || i === receiverIndex || player.team.id === receiver.team.id) return;
+      if (outcome || !player || isGK(player) || i === receiverIndex || player.team.id === receiver.team.id) {
+        return;
+      }
       const p = player.body.translation();
       const dist = Math.hypot(p.x - ballPos.x, p.z - ballPos.z);
       if (dist >= TACKLE_RANGE) return;
@@ -240,7 +269,7 @@ export const stepMatchBrain = (
   }
 
   const possessor = players[state.possessor];
-  if (!possessor) {
+  if (!possessor || isGK(possessor)) {
     state.possessor = null;
     return null;
   }
@@ -256,6 +285,7 @@ export const stepMatchBrain = (
     const v = possessor.body.linvel();
     carryBallAhead(ball, selfPos, { x: -selfPos.x * 0.2, z: attackDir }, { x: v.x, z: v.z });
     if (state.receiveTimer <= 0) possessor.ai.fsmState = "dribble";
+    stepFieldDefense(ball, players, state, ballXZ, ballVelXZ);
     return null;
   }
 
@@ -268,7 +298,10 @@ export const stepMatchBrain = (
           ball: ballXZ,
           attackDir,
           preferredFoot: possessor.ai.preferredFoot,
-          teammates: teammateEntries(players, possessor.team.id, from),
+          teammates: teammateEntries(players, possessor.team.id, from).filter((t) => {
+            const p = players[t.index];
+            return p && !isGK(p); // outfield passes; GK clears via own SM
+          }),
           opponents,
           keeperPos: opponentKeeperPos(players, possessor.team),
         });
@@ -331,5 +364,126 @@ export const stepMatchBrain = (
   possessor.ai.fsmState = "dribble";
   const v = possessor.body.linvel();
   carryBallAhead(ball, selfPos, steer, { x: v.x, z: v.z });
-  return null;
+
+  const defendEvent = stepFieldDefense(ball, players, state, ballXZ, ballVelXZ);
+  return defendEvent;
+};
+
+const fieldNearest = (
+  players: (PlayerRef | null)[],
+  ballXZ: Pos2,
+  nearestToBall: NearestPlayer | null,
+): NearestPlayer | null => {
+  if (nearestToBall) {
+    const p = players[nearestToBall.index];
+    if (p && !isGK(p)) return nearestToBall;
+  }
+  return findNearestPlayer(ballXZ, players.length, (i) => {
+    const player = players[i];
+    if (!player || isGK(player)) return null;
+    return posOf(player);
+  });
+};
+
+const stepKeepers = (
+  ball: RapierRigidBody,
+  players: (PlayerRef | null)[],
+  state: BrainState,
+  delta: number,
+): MatchEvent | null => {
+  let event: MatchEvent | null = null;
+
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (!p || !isGK(p) || !p.keeper) continue;
+
+    const holding = state.possessor === i;
+    const result = stepGoalkeeper(
+      p.body,
+      p.keeper,
+      p.team,
+      ball,
+      holding,
+      teammateEntries(players, p.team.id, i).filter((t) => {
+        const mate = players[t.index];
+        return mate && !isGK(mate);
+      }),
+      delta,
+    );
+
+    if (result?.kind === "caught") {
+      state.possessor = i;
+      state.receiveTimer = 0;
+      state.commitTimer = 0;
+    } else if (result?.kind === "cleared") {
+      state.possessor = null;
+      if (result.to !== null) {
+        event = { kind: "pass", from: i, to: result.to };
+      }
+    }
+  }
+
+  return event;
+};
+
+/** Step 31 — defensive AI for every outfielder who doesn't have the ball. */
+const stepFieldDefense = (
+  _ball: RapierRigidBody,
+  players: (PlayerRef | null)[],
+  state: BrainState,
+  ballXZ: Pos2,
+  ballVelXZ: Pos2,
+): MatchEvent | null => {
+  const possessor = state.possessor !== null ? players[state.possessor] : null;
+  const hasBallTeam = possessor?.team.id ?? null;
+  const carrierPos = possessor && !isGK(possessor) ? posOf(possessor) : null;
+  const carrierIndex = state.possessor;
+
+  let tackleEvent: MatchEvent | null = null;
+
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (!p || isGK(p)) continue;
+    if (i === state.possessor) continue;
+    // Don't yank a player mid freezable reaction.
+    if (p.ai.fsmState === "pass" || p.ai.fsmState === "shoot" || p.ai.fsmState === "celebrate") {
+      continue;
+    }
+
+    const self = posOf(p);
+    const opponents: { pos: Pos2 }[] = [];
+    for (const o of players) {
+      if (o && o.team.id !== p.team.id && !isGK(o)) opponents.push({ pos: posOf(o) });
+    }
+
+    const result = stepDefendAI(p.body, p.ai, {
+      self,
+      home: { x: p.ai.home[0], z: p.ai.home[2] },
+      ball: ballXZ,
+      ballVel: ballVelXZ,
+      carrier: carrierPos,
+      mark: pickMarkTarget(self, opponents, p.team.attackingDirection),
+      attackDir: p.team.attackingDirection,
+      hasBallTeam,
+      ownTeam: p.team.id,
+    });
+
+    if (
+      result.kind === "tackle" &&
+      !tackleEvent &&
+      carrierIndex !== null &&
+      possessor &&
+      possessor.team.id !== p.team.id &&
+      Math.random() < DEFEND_TACKLE_WIN
+    ) {
+      enterReactionState(p.ai, "tackle", REACTION_DURATION);
+      state.possessor = i;
+      state.receiveTimer = RECEIVE_FACE_TIME;
+      state.commitTimer = 0;
+      faceGoal(p.body, p.ai, p.team.attackingDirection);
+      tackleEvent = { kind: "tackle", by: i, from: carrierIndex };
+    }
+  }
+
+  return tackleEvent;
 };

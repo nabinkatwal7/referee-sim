@@ -25,7 +25,13 @@ import {
   setLoose,
   type BallPossession,
 } from "../../entities/Ball/possession";
+import type { Role } from "../../entities/formation";
 import { detectPlayerCollisions } from "../../entities/Player/collisionDetector";
+import {
+  createGoalkeeperAIState,
+  type GoalkeeperAIState,
+  type KeeperFSMState,
+} from "../../entities/Player/goalkeeper";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
 import { expirePendingFoul } from "../referee/whistle";
@@ -40,7 +46,9 @@ import { wireStoreToEvents } from "./storeSync";
 type PlayerHandle = {
   body: RapierRigidBody;
   team: Team;
+  role: Role;
   ai: PlayerAIState;
+  keeper: GoalkeeperAIState | null;
 };
 
 type RefereeHandle = {
@@ -52,6 +60,23 @@ type RefereeHandle = {
 const refereeDir = new THREE.Vector3();
 
 const toTuple = (v: { x: number; y: number; z: number }): [number, number, number] => [v.x, v.y, v.z];
+
+// Replay buffer only stores field FSM labels — map keeper states to the closest stand-in.
+const keeperToReplayState = (state: KeeperFSMState): PlayerFSMState => {
+  switch (state) {
+    case "idle":
+      return "idle";
+    case "track":
+    case "intercept":
+      return "move";
+    case "dive":
+      return "tackle";
+    case "catch":
+      return "receive";
+    case "kick":
+      return "pass";
+  }
+};
 
 // Pure engine: no React, no hooks, no component state — just plain class
 // fields mutated each tick. One instance lives for the whole match; the only
@@ -120,13 +145,28 @@ export class GameLoop {
     return this.matchState;
   }
 
-  registerPlayer(index: number, body: RapierRigidBody | null, home: [number, number, number], team: Team) {
+  registerPlayer(
+    index: number,
+    body: RapierRigidBody | null,
+    home: [number, number, number],
+    team: Team,
+    role: Role,
+  ) {
     if (!body) {
       this.players[index] = null;
       return;
     }
     const existing = this.players[index];
-    this.players[index] = { body, team, ai: existing?.ai ?? createPlayerAIState(home) };
+    this.players[index] = {
+      body,
+      team,
+      role,
+      ai: existing?.ai ?? createPlayerAIState(home),
+      keeper:
+        role === "GK"
+          ? (existing?.keeper ?? createGoalkeeperAIState(home))
+          : null,
+    };
   }
 
   setBall(body: RapierRigidBody | null) {
@@ -141,13 +181,21 @@ export class GameLoop {
     return this.referee?.body ?? null;
   }
 
-  // Read-only snapshot for the visual layer to pick an animation clip —
-  // movement/FSM logic itself lives entirely in updateAI, this is just a peek.
-  getPlayerAnimationState(index: number): { fsmState: PlayerFSMState; speed: number } | null {
+  // Read-only snapshot for the visual layer to pick an animation clip.
+  getPlayerAnimationState(
+    index: number,
+  ):
+    | { kind: "field"; fsmState: PlayerFSMState; speed: number }
+    | { kind: "keeper"; fsmState: KeeperFSMState; speed: number }
+    | null {
     const player = this.players[index];
     if (!player) return null;
     const v = player.body.linvel();
-    return { fsmState: player.ai.fsmState, speed: Math.hypot(v.x, v.z) };
+    const speed = Math.hypot(v.x, v.z);
+    if (player.role === "GK" && player.keeper) {
+      return { kind: "keeper", fsmState: player.keeper.fsmState, speed };
+    }
+    return { kind: "field", fsmState: player.ai.fsmState, speed };
   }
 
   getRefereeSpeed(): number {
@@ -244,7 +292,10 @@ export class GameLoop {
         ? {
             position: toTuple(player.body.translation()),
             velocity: toTuple(player.body.linvel()),
-            fsmState: player.ai.fsmState,
+            fsmState:
+              player.role === "GK" && player.keeper
+                ? keeperToReplayState(player.keeper.fsmState)
+                : player.ai.fsmState,
           }
         : null,
     );
@@ -293,6 +344,8 @@ export class GameLoop {
   private updateAI(delta: number) {
     this.players.forEach((player) => {
       if (!player) return;
+      // Keepers run exclusively via stepGoalkeeper inside the brain.
+      if (player.role === "GK") return;
       stepPlayerAI(player.body, player.ai, delta);
     });
   }

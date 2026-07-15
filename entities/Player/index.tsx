@@ -3,8 +3,9 @@ import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { CapsuleCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import type { GameLoop } from "../../engine/match/GameLoop";
+import type { Role } from "../formation";
 import Character, { type CharacterAnimation } from "../Character";
-import { mapPlayerAnimation } from "../animationMap";
+import { mapKeeperAnimation, mapPlayerAnimation } from "../animationMap";
 import type { Team } from "../../engine/team/Team";
 
 const ANIMATION_POLL_INTERVAL = 0.15; // seconds — avoid re-rendering 22 players every frame
@@ -15,24 +16,21 @@ type Props = {
   team: Team;
   color?: string;
   name?: string;
-  role?: string;
+  role: Role;
   gameLoop: GameLoop;
 };
 
-// Movement lives in ./ai.ts, ball reactions in ./brain.ts, both driven by the
-// engine each frame — this component just renders the body plus an optional
-// name tag, and registers itself with the engine. The visual model
-// (entities/Character.tsx) is decoupled from the physics collider (an
-// explicit capsule) since the model's geometry is too complex to auto-hull.
+// Movement lives in ./ai.ts (outfield) / ./goalkeeper.ts (GK), ball reactions
+// in ./brain.ts — this component just renders and registers with the engine.
 const Player = ({ index, home, team, color = "#1976d2", name, role, gameLoop }: Props) => {
   const [animation, setAnimation] = useState<CharacterAnimation>("idle");
   const pollTimer = useRef(0);
 
   const setRef = useCallback(
     (instance: RapierRigidBody | null) => {
-      gameLoop.registerPlayer(index, instance, home, team);
+      gameLoop.registerPlayer(index, instance, home, team, role);
     },
-    [gameLoop, index, home, team],
+    [gameLoop, index, home, team, role],
   );
 
   useFrame((_state, delta) => {
@@ -42,7 +40,11 @@ const Player = ({ index, home, team, color = "#1976d2", name, role, gameLoop }: 
 
     const snapshot = gameLoop.getPlayerAnimationState(index);
     if (!snapshot) return;
-    setAnimation(mapPlayerAnimation(snapshot.fsmState, snapshot.speed));
+    setAnimation(
+      snapshot.kind === "keeper"
+        ? mapKeeperAnimation(snapshot.fsmState, snapshot.speed)
+        : mapPlayerAnimation(snapshot.fsmState, snapshot.speed),
+    );
   });
 
   return (

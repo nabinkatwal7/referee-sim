@@ -1,5 +1,6 @@
 import type { CharacterAnimation } from "./Character";
 import type { PlayerFSMState } from "./Player/ai";
+import type { KeeperFSMState } from "./Player/goalkeeper";
 
 const SPRINT_THRESHOLD = 4; // m/s — matches the midpoint between WALK_SPEED and RUN_SPEED
 
@@ -14,7 +15,10 @@ export const mapPlayerAnimation = (
     case "idle":
       return "idle";
     case "move":
+    case "press":
       return speed >= SPRINT_THRESHOLD ? "sprint" : "walk";
+    case "recover":
+      return "walk";
     case "receive":
       return "pick-up";
     case "dribble":
@@ -26,6 +30,26 @@ export const mapPlayerAnimation = (
       return "attack-melee-right";
     case "celebrate":
       return "emote-yes";
+  }
+};
+
+export const mapKeeperAnimation = (
+  fsmState: KeeperFSMState,
+  speed: number,
+): CharacterAnimation => {
+  switch (fsmState) {
+    case "idle":
+      return "idle";
+    case "track":
+      return speed > 0.4 ? "walk" : "idle";
+    case "intercept":
+      return "sprint";
+    case "dive":
+      return "attack-melee-right";
+    case "catch":
+      return "pick-up";
+    case "kick":
+      return "attack-kick-right";
   }
 };
 
