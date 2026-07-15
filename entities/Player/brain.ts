@@ -209,7 +209,7 @@ export const stepMatchBrain = (
       if (candidate && !isGK(candidate)) {
         const p = posOf(candidate);
         if (isBallArriving(p, ballXZ, ballVelXZ) && !canReceive(ballSpeed, nearest.dist)) {
-          approachBall(candidate.body, candidate.ai, ballXZ);
+          approachBall(candidate.body, candidate.ai, ballXZ, ballVelXZ);
         }
       }
     }
@@ -438,6 +438,7 @@ const stepFieldDefense = (
   const hasBallTeam = possessor?.team.id ?? null;
   const carrierPos = possessor && !isGK(possessor) ? posOf(possessor) : null;
   const carrierIndex = state.possessor;
+  const passTarget = predictedPassTarget(players, ballXZ, ballVelXZ);
 
   let tackleEvent: MatchEvent | null = null;
 
@@ -445,7 +446,6 @@ const stepFieldDefense = (
     const p = players[i];
     if (!p || isGK(p)) continue;
     if (i === state.possessor) continue;
-    // Don't yank a player mid freezable reaction.
     if (p.ai.fsmState === "pass" || p.ai.fsmState === "shoot" || p.ai.fsmState === "celebrate") {
       continue;
     }
@@ -456,16 +456,31 @@ const stepFieldDefense = (
       if (o && o.team.id !== p.team.id && !isGK(o)) opponents.push({ pos: posOf(o) });
     }
 
+    const roster = p.team.players.find((tp) => tp.index === i);
+    const anchors = {
+      home: { x: (roster?.home ?? p.ai.home)[0], z: (roster?.home ?? p.ai.home)[2] },
+      attack: {
+        x: (roster?.attack ?? p.ai.home)[0],
+        z: (roster?.attack ?? p.ai.home)[2],
+      },
+      defend: {
+        x: (roster?.defend ?? p.ai.home)[0],
+        z: (roster?.defend ?? p.ai.home)[2],
+      },
+    };
+
     const result = stepDefendAI(p.body, p.ai, {
       self,
-      home: { x: p.ai.home[0], z: p.ai.home[2] },
+      anchors,
       ball: ballXZ,
       ballVel: ballVelXZ,
       carrier: carrierPos,
+      passTarget,
       mark: pickMarkTarget(self, opponents, p.team.attackingDirection),
       attackDir: p.team.attackingDirection,
       hasBallTeam,
       ownTeam: p.team.id,
+      tactics: p.team.tactics,
     });
 
     if (
@@ -486,4 +501,29 @@ const stepFieldDefense = (
   }
 
   return tackleEvent;
+};
+
+/** Step 37 — who the loose/moving ball is heading toward (approx pass receiver). */
+const predictedPassTarget = (
+  players: (PlayerRef | null)[],
+  ball: Pos2,
+  ballVel: Pos2,
+): Pos2 | null => {
+  const speed = Math.hypot(ballVel.x, ballVel.z);
+  if (speed < 4) return null;
+  let best: Pos2 | null = null;
+  let bestAlong = 2;
+  for (const p of players) {
+    if (!p || isGK(p)) continue;
+    const pos = posOf(p);
+    const dx = pos.x - ball.x;
+    const dz = pos.z - ball.z;
+    const along = (dx * ballVel.x + dz * ballVel.z) / speed;
+    const perp = Math.abs(dx * (ballVel.z / speed) - dz * (ballVel.x / speed));
+    if (along > bestAlong && along < 35 && perp < 5) {
+      bestAlong = along;
+      best = pos;
+    }
+  }
+  return best;
 };

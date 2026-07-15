@@ -1,10 +1,14 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { TeamId } from "../../engine/team/Team";
 import type { Pos2 } from "../Ball/nearestPlayer";
+import { predictBallPosition, timeToNearPoint } from "./ballPrediction";
 import type { PlayerAIState } from "./ai";
+import type { TacticalParams } from "./tactics";
+import { DEFAULT_TACTICS } from "./tactics";
+import { dynamicShapeTarget, shapePhaseFor, type PlayerAnchors } from "./positioning";
 
-// Step 31 — Defensive AI (field players only).
-// Track opponent → Intercept pass → Press → Tackle → Recover.
+// Step 31 — Defensive AI (+ 33/36/37 shape & intercept).
+// Track → Intercept pass → Press → Tackle → Recover.
 // Goalkeepers never call this.
 
 export type DefendPhase = "track" | "intercept" | "press" | "tackle" | "recover";
@@ -18,16 +22,17 @@ const MARK_OFFSET = 2.5;
 
 export type DefendContext = {
   self: Pos2;
-  home: Pos2;
+  anchors: PlayerAnchors;
   ball: Pos2;
   ballVel: Pos2;
-  /** Opponent with the ball, if any. */
   carrier: Pos2 | null;
-  /** Mark target — nearest dangerous opponent. */
+  /** Predicted receiver / pass target if a ball is in flight toward a mate. */
+  passTarget: Pos2 | null;
   mark: Pos2 | null;
-  attackDir: 1 | -1; // our attacking direction (own goal is opposite)
-  hasBallTeam: TeamId | null; // who owns the ball right now
+  attackDir: 1 | -1;
+  hasBallTeam: TeamId | null;
   ownTeam: TeamId;
+  tactics: TacticalParams;
 };
 
 export type DefendResult =
@@ -51,19 +56,7 @@ const moveToward = (
   setVel(body, (dx / len) * speed, (dz / len) * speed);
 };
 
-/** Point on the ball→carrier/mark lane to cut a pass. */
-const interceptPoint = (ball: Pos2, target: Pos2, self: Pos2): Pos2 => {
-  const dx = target.x - ball.x;
-  const dz = target.z - ball.z;
-  // Aim at ~halfway along the lane, biased toward wherever we already are.
-  const mid = { x: ball.x + dx * 0.45, z: ball.z + dz * 0.45 };
-  const toMid = Math.hypot(mid.x - self.x, mid.z - self.z);
-  if (toMid < 1) return mid;
-  return mid;
-};
-
 const markingSpot = (mark: Pos2, attackDir: 1 | -1): Pos2 => ({
-  // Stand goal-side of the opponent.
   x: mark.x,
   z: mark.z - attackDir * MARK_OFFSET,
 });
@@ -72,12 +65,14 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
   const opponentHasBall = ctx.hasBallTeam !== null && ctx.hasBallTeam !== ctx.ownTeam;
   const loose = ctx.hasBallTeam === null;
   const ballSpeed = Math.hypot(ctx.ballVel.x, ctx.ballVel.z);
+  const pressDist = 8 + ctx.tactics.pressing * 6;
 
   if (opponentHasBall && ctx.carrier) {
     const distCarrier = Math.hypot(ctx.carrier.x - ctx.self.x, ctx.carrier.z - ctx.self.z);
     if (distCarrier < TACKLE_RANGE) return "tackle";
-    if (distCarrier < 10) return "press";
-    // Ball moving toward a marked man → cut the lane.
+    if (distCarrier < pressDist) return "press";
+    // Step 37 — pass in flight toward mark → intercept.
+    if (ctx.passTarget && ballSpeed > 3) return "intercept";
     if (ctx.mark && ballSpeed > 3) {
       const closing =
         (ctx.ballVel.x * (ctx.mark.x - ctx.ball.x) +
@@ -89,12 +84,12 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
   }
 
   if (loose) {
-    const distBall = Math.hypot(ctx.ball.x - ctx.self.x, ctx.ball.z - ctx.self.z);
+    const future = predictBallPosition(ctx.ball, ctx.ballVel, 0.5);
+    const distBall = Math.hypot(future.x - ctx.self.x, future.z - ctx.self.z);
     if (distBall < 12 && ballSpeed > 2) return "intercept";
     return "recover";
   }
 
-  // Our team has the ball — soft recover toward shape.
   return "recover";
 };
 
@@ -109,6 +104,8 @@ export const stepDefendAI = (
   else if (phase === "tackle") ai.fsmState = "tackle";
   else ai.fsmState = "move";
 
+  const pressMul = 0.85 + ctx.tactics.pressing * 0.4;
+
   switch (phase) {
     case "track": {
       if (ctx.mark) moveToward(body, ctx.self, markingSpot(ctx.mark, ctx.attackDir), TRACK_SPEED);
@@ -117,33 +114,46 @@ export const stepDefendAI = (
       return { kind: "none", phase };
     }
     case "intercept": {
-      const target = ctx.mark ?? ctx.carrier ?? ctx.ball;
-      const point = interceptPoint(ctx.ball, target, ctx.self);
-      moveToward(body, ctx.self, point, INTERCEPT_SPEED);
+      // Step 36/37 — run to where the ball (or pass) will be.
+      const aim = ctx.passTarget ?? ctx.mark ?? ctx.carrier ?? ctx.ball;
+      const t = timeToNearPoint(ctx.ball, ctx.ballVel, aim);
+      const future = predictBallPosition(ctx.ball, ctx.ballVel, Math.max(0.25, t));
+      moveToward(body, ctx.self, future, INTERCEPT_SPEED * pressMul);
       return { kind: "none", phase };
     }
     case "press": {
-      if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED);
-      else moveToward(body, ctx.self, ctx.ball, PRESS_SPEED);
+      if (ctx.carrier) {
+        const futureCarrier = {
+          x: ctx.carrier.x + (ctx.ballVel.x > 0 ? 0 : 0),
+          z: ctx.carrier.z,
+        };
+        moveToward(body, ctx.self, futureCarrier, PRESS_SPEED * pressMul);
+      } else {
+        const future = predictBallPosition(ctx.ball, ctx.ballVel, 0.35);
+        moveToward(body, ctx.self, future, PRESS_SPEED * pressMul);
+      }
       return { kind: "none", phase };
     }
     case "tackle": {
-      if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED);
+      if (ctx.carrier) moveToward(body, ctx.self, ctx.carrier, PRESS_SPEED * pressMul);
       return { kind: "tackle", phase: "tackle" };
     }
     case "recover": {
-      const backZ = ctx.home.z - ctx.attackDir * 2;
-      const target = {
-        x: ctx.home.x * 0.7 + ctx.ball.x * 0.3,
-        z: backZ * 0.6 + ctx.home.z * 0.4,
-      };
+      const ownHas = ctx.hasBallTeam === ctx.ownTeam;
+      const oppHas = ctx.hasBallTeam !== null && ctx.hasBallTeam !== ctx.ownTeam;
+      const target = dynamicShapeTarget(
+        ctx.anchors,
+        ctx.ball,
+        ctx.attackDir,
+        shapePhaseFor(ownHas, oppHas),
+        ctx.tactics,
+      );
       moveToward(body, ctx.self, target, RECOVER_SPEED);
       return { kind: "none", phase };
     }
   }
 };
 
-/** Nearest opponent ahead of our goal (most advanced threat). */
 export const pickMarkTarget = (
   self: Pos2,
   opponents: { pos: Pos2 }[],
@@ -152,7 +162,6 @@ export const pickMarkTarget = (
   let best: Pos2 | null = null;
   let bestScore = -Infinity;
   for (const o of opponents) {
-    // Prefer opponents closer to our goal (negative attack advancement).
     const threat = -o.pos.z * attackDir;
     const dist = Math.hypot(o.pos.x - self.x, o.pos.z - self.z);
     const score = threat * 2 - dist;
@@ -163,3 +172,5 @@ export const pickMarkTarget = (
   }
   return best;
 };
+
+export { DEFAULT_TACTICS };

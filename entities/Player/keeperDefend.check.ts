@@ -2,19 +2,27 @@
 import assert from "node:assert/strict";
 import { chooseDefendPhase, pickMarkTarget } from "./defend";
 import { createGoalkeeperAIState } from "./goalkeeper";
+import { DEFAULT_TACTICS } from "./tactics";
 
-// Defensive AI: press when carrier is close; recover when our team has ball.
+const anchors = {
+  home: { x: 0, z: -20 },
+  attack: { x: 0, z: -12 },
+  defend: { x: 0, z: -24 },
+};
+
 assert.equal(
   chooseDefendPhase({
     self: { x: 0, z: 0 },
-    home: { x: 0, z: -20 },
+    anchors,
     ball: { x: 2, z: 2 },
     ballVel: { x: 0, z: 0 },
     carrier: { x: 2, z: 2 },
+    passTarget: null,
     mark: { x: 2, z: 2 },
     attackDir: 1,
     hasBallTeam: "away",
     ownTeam: "home",
+    tactics: DEFAULT_TACTICS,
   }),
   "press",
 );
@@ -22,14 +30,16 @@ assert.equal(
 assert.equal(
   chooseDefendPhase({
     self: { x: 0, z: 0 },
-    home: { x: 0, z: -20 },
+    anchors,
     ball: { x: 2, z: 2 },
     ballVel: { x: 0, z: 0 },
     carrier: { x: 1, z: 1 },
+    passTarget: null,
     mark: { x: 1, z: 1 },
     attackDir: 1,
     hasBallTeam: "away",
     ownTeam: "home",
+    tactics: DEFAULT_TACTICS,
   }),
   "tackle",
 );
@@ -37,14 +47,16 @@ assert.equal(
 assert.equal(
   chooseDefendPhase({
     self: { x: 0, z: 0 },
-    home: { x: 0, z: -20 },
+    anchors,
     ball: { x: 0, z: 10 },
     ballVel: { x: 0, z: 0 },
     carrier: { x: 0, z: 10 },
+    passTarget: null,
     mark: null,
     attackDir: 1,
     hasBallTeam: "home",
     ownTeam: "home",
+    tactics: DEFAULT_TACTICS,
   }),
   "recover",
 );
@@ -56,7 +68,6 @@ const mark = pickMarkTarget(
 );
 assert.ok(mark && mark.z === -5, "mark the more goal-threatening opponent");
 
-// Keeper state machine boots idle — separate from field FSM.
 const gk = createGoalkeeperAIState([0, 1, -50]);
 assert.equal(gk.fsmState, "idle");
 assert.equal(gk.holdTimer, 0);
