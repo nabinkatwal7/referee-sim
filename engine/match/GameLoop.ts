@@ -1,4 +1,5 @@
 import type { RapierRigidBody } from "@react-three/rapier";
+import * as THREE from "three";
 import type { Camera } from "three";
 import { createPlayerAIState, stepPlayerAI, type PlayerAIState } from "../../entities/Player/ai";
 import {
@@ -8,10 +9,13 @@ import {
   type MatchEvent as BrainEvent,
   type Team,
 } from "../../entities/Player/brain";
+import { checkBoundary } from "../../entities/Ball/boundary";
+import { detectCollision } from "../../entities/Ball/collision";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
+import { computeVision, decideCall, type Vision } from "../referee/vision";
+import { EventBus } from "./EventBus";
 import { useGameStore } from "./gameState";
-
-export type MatchEvent = BrainEvent & { at: number };
+import { wireStoreToEvents } from "./storeSync";
 
 type PlayerHandle = {
   body: RapierRigidBody;
@@ -25,16 +29,17 @@ type RefereeHandle = {
   getInput: () => RefereeInput;
 };
 
-const MAX_EVENTS = 200;
-
-const teamToSide = (team: Team): "home" | "away" => (team === "A" ? "home" : "away");
+const refereeDir = new THREE.Vector3();
 
 // Pure engine: no React, no hooks, no component state — just plain class
 // fields mutated each tick. One instance lives for the whole match; the only
 // place React touches it is a single useFrame call (see GameLoopRunner).
-// Game state (score/time/cards/possession/current event/replay/paused) is
-// NOT stored here — it's written out to the Zustand store (./gameState) via
-// its vanilla getState/setState API, which needs no React either.
+//
+// Nothing here happens directly: every occurrence (pass, tackle, shot, foul,
+// penalty, offside, throw-in, corner, collision) is emitted on `bus` instead
+// of being handled inline. The Zustand store (game state — score/time/cards/
+// possession/current event/replay/paused, no positions) subscribes to that
+// bus via wireStoreToEvents; GameLoop never writes to it directly.
 export class GameLoop {
   private clock = 0;
   private clockWholeSecond = -1;
@@ -42,7 +47,13 @@ export class GameLoop {
   private ball: RapierRigidBody | null = null;
   private referee: RefereeHandle | null = null;
   private brain: BrainState = createBrainState();
-  readonly events: MatchEvent[] = [];
+  private lastTouchTeam: Team | null = null;
+  private previousBallVelocity = { x: 0, z: 0 };
+  readonly bus = new EventBus();
+
+  constructor() {
+    wireStoreToEvents(this.bus);
+  }
 
   registerPlayer(index: number, body: RapierRigidBody | null, home: [number, number, number], team: Team) {
     if (!body) {
@@ -102,27 +113,78 @@ export class GameLoop {
 
   private updateBall(delta: number) {
     if (!this.ball) return;
-    const result = stepMatchBrain(this.ball, this.players, this.brain, delta);
-    if (!result) return;
 
-    this.events.push({ ...result, at: this.clock });
-    const store = useGameStore.getState();
-
-    if (result.kind === "pass") {
-      store.setPossession(result.to);
-      store.setCurrentEvent(`Pass: #${result.from} -> #${result.to}`);
-    } else if (result.kind === "tackle") {
-      store.setPossession(result.by);
-      store.setCurrentEvent(`Tackle: #${result.by} won it from #${result.from}`);
-    } else if (result.kind === "shot") {
-      if (result.scored) {
-        store.addGoal(teamToSide(result.team));
-        store.setCurrentEvent(`GOAL! #${result.by}`);
-      } else {
-        store.setCurrentEvent(`Shot: #${result.by} (missed)`);
-      }
-      store.setPossession(null);
+    // Collision check uses velocity as physics left it, before any kick we
+    // apply below — otherwise our own passes/shots would look like hits.
+    if (detectCollision(this.ball, this.previousBallVelocity)) {
+      const p = this.ball.translation();
+      this.bus.emit({ kind: "collision", position: { x: p.x, z: p.z }, at: this.clock });
     }
+
+    const result = stepMatchBrain(this.ball, this.players, this.brain, delta);
+    if (result) this.handleBrainEvent(result);
+
+    const boundary = checkBoundary(this.ball, this.lastTouchTeam);
+    if (boundary) this.bus.emit({ ...boundary, at: this.clock });
+
+    const v = this.ball.linvel();
+    this.previousBallVelocity = { x: v.x, z: v.z };
+  }
+
+  private handleBrainEvent(result: BrainEvent) {
+    const at = this.clock;
+
+    switch (result.kind) {
+      case "pass":
+        this.lastTouchTeam = this.players[result.to]?.team ?? this.lastTouchTeam;
+        this.bus.emit({ ...result, at });
+        break;
+
+      case "tackle":
+        this.lastTouchTeam = this.players[result.by]?.team ?? this.lastTouchTeam;
+        this.bus.emit({ ...result, at });
+        break;
+
+      case "shot":
+        this.lastTouchTeam = result.team;
+        this.bus.emit({ ...result, at });
+        if (result.scored) {
+          this.bus.emit({ kind: "goal", by: result.by, team: result.team, at });
+        }
+        break;
+
+      case "foul": {
+        this.lastTouchTeam = this.players[result.against]?.team ?? this.lastTouchTeam;
+        const vision = this.evaluateVision(result.position);
+        this.bus.emit({ ...result, given: decideCall(vision), visionQuality: vision.quality, at });
+        break;
+      }
+
+      case "penalty": {
+        this.lastTouchTeam = result.team;
+        const vision = this.evaluateVision(result.position);
+        this.bus.emit({ ...result, given: decideCall(vision), visionQuality: vision.quality, at });
+        break;
+      }
+
+      case "offside": {
+        const vision = this.evaluateVision(result.position);
+        const given = decideCall(vision);
+        this.bus.emit({ ...result, given, visionQuality: vision.quality, at });
+        // Missed call: play continues as though the pass had simply succeeded.
+        if (!given) this.lastTouchTeam = result.team;
+        break;
+      }
+    }
+  }
+
+  private evaluateVision(position: { x: number; z: number }): Vision {
+    if (!this.referee) return { inView: false, distance: Infinity, angle: Math.PI, quality: 0 };
+    const refPos = this.referee.body.translation();
+    this.referee.camera.getWorldDirection(refereeDir);
+    refereeDir.y = 0;
+    refereeDir.normalize();
+    return computeVision(refPos, refereeDir, position);
   }
 
   private updateReferee() {
@@ -131,8 +193,6 @@ export class GameLoop {
   }
 
   private generateEvents() {
-    if (this.events.length > MAX_EVENTS) {
-      this.events.splice(0, this.events.length - MAX_EVENTS);
-    }
+    // Event history trimming lives inside EventBus itself.
   }
 }

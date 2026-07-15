@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { PITCH_WIDTH, PITCH_LENGTH } from "./pitchDimensions";
+import { PITCH_WIDTH, PITCH_LENGTH, PENALTY_BOX_DEPTH, PENALTY_BOX_WIDTH } from "./pitchDimensions";
 
 const SCALE = 12; // px per meter
 
@@ -10,8 +10,8 @@ const drawPenaltyArea = (
   edgeY: number,
   inward: 1 | -1,
 ) => {
-  const penaltyDepth = 16.5 * SCALE;
-  const penaltyWidth = 40.32 * SCALE;
+  const penaltyDepth = PENALTY_BOX_DEPTH * SCALE;
+  const penaltyWidth = PENALTY_BOX_WIDTH * SCALE;
   const sixYardDepth = 5.5 * SCALE;
   const sixYardWidth = 18.32 * SCALE;
   const spotDist = 11 * SCALE;

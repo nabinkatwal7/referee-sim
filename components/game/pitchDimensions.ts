@@ -11,3 +11,7 @@ export const STAND_DEPTH_TOTAL = STAND_GAP_FROM_PITCH + STAND_TIERS * STAND_TIER
 export const STAND_TOP_HEIGHT = STAND_TIERS * STAND_TIER_HEIGHT;
 
 export const REFEREE_START_POSITION: [number, number, number] = [0, 1, 3];
+
+export const PENALTY_BOX_DEPTH = 16.5;
+export const PENALTY_BOX_WIDTH = 40.32;
+export const GOAL_WIDTH = 7.32;

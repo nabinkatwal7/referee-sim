@@ -1,6 +1,10 @@
 import { MathUtils } from "three";
 import type { RapierRigidBody } from "@react-three/rapier";
-import { PITCH_LENGTH } from "../../components/game/pitchDimensions";
+import {
+  PITCH_LENGTH,
+  PENALTY_BOX_DEPTH,
+  PENALTY_BOX_WIDTH,
+} from "../../components/game/pitchDimensions";
 import { enterReactionState, type PlayerAIState } from "./ai";
 
 const PICKUP_RADIUS = 6; // generous — players wander independently, not toward the ball
@@ -16,7 +20,8 @@ const SHOT_SPEED = 16;
 const GOAL_PROBABILITY = 0.3; // very primitive stand-in for real goal-line detection
 
 const TACKLE_RANGE = 3;
-const TACKLE_WIN_PROBABILITY = 0.4;
+const FOUL_PROBABILITY = 0.25; // of a contested challenge, chance it's mistimed
+const TACKLE_WIN_PROBABILITY = 0.4; // of a clean (non-foul) challenge, chance it succeeds
 
 const REACTION_DURATION = 0.5; // brief pass/shoot/tackle flash
 const CELEBRATE_DURATION = 3;
@@ -43,15 +48,71 @@ const randomHold = () => MIN_HOLD + Math.random() * (MAX_HOLD - MIN_HOLD);
 export type MatchEvent =
   | { kind: "pass"; from: number; to: number }
   | { kind: "shot"; by: number; team: Team; scored: boolean }
-  | { kind: "tackle"; by: number; from: number };
+  | { kind: "tackle"; by: number; from: number }
+  | {
+      kind: "foul";
+      by: number;
+      against: number;
+      position: { x: number; z: number };
+    }
+  | {
+      kind: "penalty";
+      by: number;
+      against: number;
+      team: Team;
+      position: { x: number; z: number };
+    }
+  | {
+      kind: "offside";
+      by: number;
+      team: Team;
+      position: { x: number; z: number };
+    };
 
 const opponentGoalZ = (team: Team) => (team === "A" ? OWN_GOAL_LINE : -OWN_GOAL_LINE);
+const attackDirection = (team: Team) => (team === "A" ? 1 : -1);
+
+const isInOwnPenaltyBox = (pos: { x: number; z: number }, team: Team): boolean => {
+  if (Math.abs(pos.x) > PENALTY_BOX_WIDTH / 2) return false;
+  return team === "A"
+    ? pos.z >= -OWN_GOAL_LINE && pos.z <= -OWN_GOAL_LINE + PENALTY_BOX_DEPTH
+    : pos.z <= OWN_GOAL_LINE && pos.z >= OWN_GOAL_LINE - PENALTY_BOX_DEPTH;
+};
+
+// Simplified offside: the receiver is offside if, at the moment of the pass,
+// they're ahead of both the ball and the second-most-advanced defender (the
+// usual "second-last defender" rule, not distinguishing the keeper specially).
+const checkOffside = (
+  players: (PlayerRef | null)[],
+  attackingTeam: Team,
+  receiverIndex: number,
+  ballPos: { x: number; z: number },
+): boolean => {
+  const dir = attackDirection(attackingTeam);
+  const receiver = players[receiverIndex];
+  if (!receiver) return false;
+
+  const defenderAdvancement = players
+    .filter((p): p is PlayerRef => !!p && p.team !== attackingTeam)
+    .map((p) => p.body.translation().z * dir)
+    .sort((a, b) => b - a);
+
+  if (defenderAdvancement.length < 2) return false;
+
+  const offsideLine = defenderAdvancement[1];
+  const receiverAdvancement = receiver.body.translation().z * dir;
+  const ballAdvancement = ballPos.z * dir;
+
+  return receiverAdvancement > offsideLine && receiverAdvancement > ballAdvancement;
+};
 
 // Idle -> Move -> Receive -> Pass -> Shoot -> Tackle -> Celebrate, for
 // whichever players the ball touches this tick. Deliberately simple: a kick
 // aims at wherever the target is right now, a shot's outcome is a coin flip
-// (there's no real goal-line sensor), and a tackle is a single roll against
-// the nearest opponent the instant the ball is picked up.
+// (there's no real goal-line sensor), and a contested pickup is either a
+// clean tackle, a foul, or a penalty (foul inside the defender's own box) —
+// these are ground truth only; whether the referee actually calls them is
+// decided separately by vision (see engine/referee/vision.ts).
 export const stepMatchBrain = (
   ball: RapierRigidBody,
   players: (PlayerRef | null)[],
@@ -81,15 +142,33 @@ export const stepMatchBrain = (
 
     const receiver = players[receiverIndex]!;
     let winnerIndex: number = receiverIndex;
-    let tackleEvent: MatchEvent | null = null;
+    let outcome: MatchEvent | null = null;
 
     players.forEach((player, i) => {
-      if (!player || i === receiverIndex || player.team === receiver.team) return;
+      if (outcome || !player || i === receiverIndex || player.team === receiver.team) return;
       const p = player.body.translation();
       const dist = Math.hypot(p.x - ballPos.x, p.z - ballPos.z);
-      if (dist < TACKLE_RANGE && Math.random() < TACKLE_WIN_PROBABILITY) {
+      if (dist >= TACKLE_RANGE) return;
+
+      if (Math.random() < FOUL_PROBABILITY) {
+        const position = { x: ballPos.x, z: ballPos.z };
+        if (isInOwnPenaltyBox(position, player.team)) {
+          outcome = {
+            kind: "penalty",
+            by: i,
+            against: receiverIndex,
+            team: receiver.team,
+            position,
+          };
+        } else {
+          outcome = { kind: "foul", by: i, against: receiverIndex, position };
+        }
+        return;
+      }
+
+      if (Math.random() < TACKLE_WIN_PROBABILITY) {
         winnerIndex = i;
-        tackleEvent = { kind: "tackle", by: i, from: receiverIndex };
+        outcome = { kind: "tackle", by: i, from: receiverIndex };
         enterReactionState(player.ai, "tackle", REACTION_DURATION);
       }
     });
@@ -97,7 +176,7 @@ export const stepMatchBrain = (
     state.possessor = winnerIndex;
     state.holdTimer = randomHold();
     enterReactionState(players[winnerIndex]!.ai, "receive", state.holdTimer);
-    return tackleEvent;
+    return outcome;
   }
 
   state.holdTimer -= delta;
@@ -154,5 +233,10 @@ export const stepMatchBrain = (
   enterReactionState(possessor.ai, "pass", REACTION_DURATION);
 
   state.possessor = null;
+
+  if (checkOffside(players, possessor.team, receiverIndex, ballPos)) {
+    return { kind: "offside", by: receiverIndex, team: possessor.team, position: { x: ballPos.x, z: ballPos.z } };
+  }
+
   return { kind: "pass", from, to: receiverIndex };
 };
