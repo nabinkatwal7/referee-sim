@@ -115,4 +115,4 @@ export const pickBestPass = (
   return best;
 };
 
-export const PASS_THRESHOLD = 0.25;
+export const PASS_THRESHOLD = 0.55;

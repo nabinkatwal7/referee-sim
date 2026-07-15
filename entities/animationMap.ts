@@ -17,6 +17,8 @@ export const mapPlayerAnimation = (
       return speed >= SPRINT_THRESHOLD ? "sprint" : "walk";
     case "receive":
       return "pick-up";
+    case "dribble":
+      return speed >= SPRINT_THRESHOLD ? "sprint" : "walk";
     case "pass":
     case "shoot":
       return "attack-kick-right";

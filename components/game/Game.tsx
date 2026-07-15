@@ -1,10 +1,9 @@
-import { useRef } from "react";
 import { KeyboardControls, PerspectiveCamera } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
+import { useRef } from "react";
 import { GameLoop } from "../../engine/match/GameLoop";
 import GameLoopRunner from "../../engine/match/GameLoopRunner";
-import { useGameStore } from "./useGameState";
 import { REFEREE_KEYBOARD_MAP } from "../../entities/Referee/controls";
 import HUD from "./HUD";
 import ReplayListener from "./ReplayListener";
@@ -14,6 +13,7 @@ import ThirdPersonCamera from "./ThirdPersonCamera";
 import Whistle from "./Whistle";
 import WhistleListener from "./WhistleListener";
 import { REFEREE_START_POSITION } from "./pitchDimensions";
+import { useGameStore } from "./useGameState";
 
 const Game = () => {
   const gameLoopRef = useRef<GameLoop | null>(null);

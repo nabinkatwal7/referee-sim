@@ -9,21 +9,28 @@ const WANDER_RADIUS = 15; // how far from home a new target may be picked
 const MIN_PAUSE = 1; // seconds to stand still before/after each move
 const MAX_PAUSE = 3;
 
-// Idle -> Move -> Receive -> Pass -> Shoot -> Tackle -> Celebrate.
-// Idle/Move are driven here (the wander loop); Receive/Pass/Shoot/Tackle/
-// Celebrate are set externally by the match brain (see ./brain.ts) when the
-// ball is involved — this module just freezes movement while one of those
-// is active and hands control back once it expires.
+// Idle -> Move -> Receive -> Dribble -> Pass -> Shoot -> Tackle -> Celebrate.
+// Idle/Move: wander loop here. Receive/Dribble: brain steers (no teleport).
+// Pass/Shoot/Tackle/Celebrate: short freeze for the kick/react clip.
 export type PlayerFSMState =
-  "idle" | "move" | "receive" | "pass" | "shoot" | "tackle" | "celebrate";
+  | "idle"
+  | "move"
+  | "receive"
+  | "dribble"
+  | "pass"
+  | "shoot"
+  | "tackle"
+  | "celebrate";
 
-const REACTION_STATES = new Set<PlayerFSMState>([
-  "receive",
+const FREEZE_STATES = new Set<PlayerFSMState>([
   "pass",
   "shoot",
   "tackle",
   "celebrate",
 ]);
+
+// Brain owns linvel for these — wander must not overwrite approach/dribble.
+const BRAIN_DRIVEN = new Set<PlayerFSMState>(["receive", "dribble"]);
 
 export type PlayerAIState = {
   home: [number, number, number];
@@ -32,6 +39,7 @@ export type PlayerAIState = {
   pauseUntil: number;
   fsmState: PlayerFSMState;
   stateTimer: number;
+  preferredFoot: 1 | -1; // +1 right, -1 left — used by shoot AI (weak foot)
 };
 
 const randomPause = () => MIN_PAUSE + Math.random() * (MAX_PAUSE - MIN_PAUSE);
@@ -55,35 +63,34 @@ export const createPlayerAIState = (
   pauseUntil: randomPause(),
   fsmState: "idle",
   stateTimer: 0,
+  preferredFoot: Math.random() < 0.75 ? 1 : -1,
 });
 
-// Puts a player into one of the ball-reaction states for `duration` seconds;
-// stepPlayerAI freezes movement until it expires, then resumes wandering.
+// Puts a player into a short freezable reaction (pass/shoot/tackle/celebrate).
 export const enterReactionState = (
   state: PlayerAIState,
-  fsmState: Exclude<PlayerFSMState, "idle" | "move">,
+  fsmState: Exclude<PlayerFSMState, "idle" | "move" | "receive" | "dribble">,
   duration: number,
 ) => {
   state.fsmState = fsmState;
   state.stateTimer = duration;
 };
 
-// Static -> walk -> run, cycling: idles a moment, picks a random point near
-// its home spot, walks or sprints there depending on distance, then repeats.
-// Pure function — no React, no hooks — so it can run from the engine's
-// updateAI phase instead of the component's own frame loop.
 export const stepPlayerAI = (
   body: RapierRigidBody,
   state: PlayerAIState,
   delta: number,
 ) => {
-  if (REACTION_STATES.has(state.fsmState)) {
+  if (FREEZE_STATES.has(state.fsmState)) {
     const linvel = body.linvel();
     body.setLinvel({ x: 0, y: linvel.y, z: 0 }, true);
     state.stateTimer -= delta;
-    if (state.stateTimer <= 0) {
-      state.fsmState = "move";
-    }
+    if (state.stateTimer <= 0) state.fsmState = "move";
+    return;
+  }
+
+  if (BRAIN_DRIVEN.has(state.fsmState)) {
+    // Receive / dribble velocity set later this tick in stepMatchBrain.
     return;
   }
 

@@ -6,42 +6,51 @@ import {
   canReceive,
   findNearestPlayer,
   type NearestPlayer,
+  type Pos2,
 } from "../Ball/nearestPlayer";
 import { enterReactionState, type PlayerAIState } from "./ai";
+import { decideAction } from "./decide";
+import {
+  applySteer,
+  carryBallAhead,
+  dribbleSteer,
+  moveSteer,
+} from "./dribble";
+import { approachBall, faceGoal, isBallArriving } from "./receive";
 
-const MIN_HOLD = 1.2; // seconds a possessor waits before acting
-const MAX_HOLD = 2.5;
 const MIN_PASS_SPEED = 6;
 const MAX_PASS_SPEED = 14;
 
-const SHOOT_RANGE = 30; // start considering a shot within this distance of the opponent goal
-const SHOOT_PROBABILITY = 0.5;
-const SHOT_SPEED = 16;
-const GOAL_PROBABILITY = 0.3; // very primitive stand-in for real goal-line detection
-
 const TACKLE_RANGE = 3;
-const FOUL_PROBABILITY = 0.25; // of a contested challenge, chance it's mistimed
-const TACKLE_WIN_PROBABILITY = 0.4; // of a clean (non-foul) challenge, chance it succeeds
+const FOUL_PROBABILITY = 0.25;
+const TACKLE_WIN_PROBABILITY = 0.4;
 
-const REACTION_DURATION = 0.5; // brief pass/shoot/tackle flash
+const REACTION_DURATION = 0.5;
 const CELEBRATE_DURATION = 3;
+const RECEIVE_FACE_TIME = 0.45;
+const GOAL_PROBABILITY_BASE = 0.15; // scaled up by shot quality
 
 const OWN_GOAL_LINE = PITCH_LENGTH / 2;
 
 export type PlayerRef = {
   body: RapierRigidBody;
-  team: Team; // live reference — attackingDirection can flip at half-time
+  team: Team;
   ai: PlayerAIState;
 };
 
 export type BrainState = {
   possessor: number | null;
-  holdTimer: number;
+  /** Seconds left facing goal after a clean take. */
+  receiveTimer: number;
+  /** While > 0, stick to dribble/move — don't re-ask shoot/pass every frame. */
+  commitTimer: number;
 };
 
-export const createBrainState = (): BrainState => ({ possessor: null, holdTimer: 0 });
-
-const randomHold = () => MIN_HOLD + Math.random() * (MAX_HOLD - MIN_HOLD);
+export const createBrainState = (): BrainState => ({
+  possessor: null,
+  receiveTimer: 0,
+  commitTimer: 0,
+});
 
 export type MatchEvent =
   | { kind: "pass"; from: number; to: number }
@@ -67,10 +76,6 @@ export type MatchEvent =
       position: { x: number; z: number };
     };
 
-// A team's own goal sits opposite whichever way it currently attacks — this
-// reads the LIVE direction, so it stays correct after a half-time flip.
-const opponentGoalZ = (team: Team) => team.attackingDirection * OWN_GOAL_LINE;
-
 const isInOwnPenaltyBox = (pos: { x: number; z: number }, team: Team): boolean => {
   if (Math.abs(pos.x) > PENALTY_BOX_WIDTH / 2) return false;
   const ownGoalZ = -team.attackingDirection * OWN_GOAL_LINE;
@@ -79,9 +84,6 @@ const isInOwnPenaltyBox = (pos: { x: number; z: number }, team: Team): boolean =
     : pos.z <= ownGoalZ && pos.z >= ownGoalZ - PENALTY_BOX_DEPTH;
 };
 
-// Simplified offside: the receiver is offside if, at the moment of the pass,
-// they're ahead of both the ball and the second-most-advanced defender (the
-// usual "second-last defender" rule, not distinguishing the keeper specially).
 const checkOffside = (
   players: (PlayerRef | null)[],
   attackingTeam: Team,
@@ -106,41 +108,98 @@ const checkOffside = (
   return receiverAdvancement > offsideLine && receiverAdvancement > ballAdvancement;
 };
 
-// Idle -> Move -> Receive -> Pass -> Shoot -> Tackle -> Celebrate, for
-// whichever players the ball touches this tick. Deliberately simple: a kick
-// aims at wherever the target is right now, a shot's outcome is a coin flip
-// (there's no real goal-line sensor), and a contested pickup is either a
-// clean tackle, a foul, or a penalty (foul inside the defender's own box) —
-// these are ground truth only; whether the referee actually calls them is
-// decided separately by vision (see engine/referee/vision.ts).
+const posOf = (p: PlayerRef): Pos2 => {
+  const t = p.body.translation();
+  return { x: t.x, z: t.z };
+};
+
+const opponentPositions = (
+  players: (PlayerRef | null)[],
+  teamId: TeamId,
+): Pos2[] => {
+  const out: Pos2[] = [];
+  for (const p of players) {
+    if (p && p.team.id !== teamId) out.push(posOf(p));
+  }
+  return out;
+};
+
+const teammateEntries = (
+  players: (PlayerRef | null)[],
+  teamId: TeamId,
+  selfIndex: number,
+): { index: number; pos: Pos2 }[] => {
+  const out: { index: number; pos: Pos2 }[] = [];
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (!p || i === selfIndex || p.team.id !== teamId) continue;
+    out.push({ index: i, pos: posOf(p) });
+  }
+  return out;
+};
+
+const opponentKeeperPos = (
+  players: (PlayerRef | null)[],
+  ownTeam: Team,
+): Pos2 | null => {
+  for (const p of players) {
+    if (!p || p.team.id === ownTeam.id) continue;
+    for (const tp of p.team.players) {
+      if (tp.role !== "GK") continue;
+      const gk = players[tp.index];
+      return gk ? posOf(gk) : null;
+    }
+  }
+  return null;
+};
+
 export const stepMatchBrain = (
   ball: RapierRigidBody,
   players: (PlayerRef | null)[],
   state: BrainState,
   delta: number,
-  // Precomputed every frame by GameLoop (Step 24). When null, we re-scan —
-  // kept optional so the brain stays callable on its own.
   nearestToBall: NearestPlayer | null = null,
 ): MatchEvent | null => {
   const ballPos = ball.translation();
   const ballVel = ball.linvel();
   const ballSpeed = Math.hypot(ballVel.x, ballVel.z);
+  const ballXZ: Pos2 = { x: ballPos.x, z: ballPos.z };
+  const ballVelXZ: Pos2 = { x: ballVel.x, z: ballVel.z };
 
+  // —— Loose ball: approach → receive (no teleport) ——
   if (state.possessor === null) {
     const nearest =
       nearestToBall ??
-      findNearestPlayer(ballPos, players.length, (i) => {
+      findNearestPlayer(ballXZ, players.length, (i) => {
         const player = players[i];
-        if (!player) return null;
-        const p = player.body.translation();
-        return { x: p.x, z: p.z };
+        return player ? posOf(player) : null;
       });
-    if (!nearest || !canReceive(ballSpeed, nearest.dist)) return null;
-    const receiverIndex = nearest.index;
 
+    // Clear stale receive on anyone who isn't the current approach candidate.
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      if (p && p.ai.fsmState === "receive" && i !== nearest?.index) {
+        p.ai.fsmState = "move";
+      }
+    }
+
+    if (nearest) {
+      const candidate = players[nearest.index];
+      if (candidate) {
+        const p = posOf(candidate);
+        if (isBallArriving(p, ballXZ, ballVelXZ) && !canReceive(ballSpeed, nearest.dist)) {
+          approachBall(candidate.body, candidate.ai, ballXZ);
+        }
+      }
+    }
+
+    if (!nearest || !canReceive(ballSpeed, nearest.dist)) return null;
+
+    const receiverIndex = nearest.index;
     const receiver = players[receiverIndex];
     if (!receiver) return null;
-    let winnerIndex: number = receiverIndex;
+
+    let winnerIndex = receiverIndex;
     let outcome: MatchEvent | null = null;
 
     players.forEach((player, i) => {
@@ -173,13 +232,12 @@ export const stepMatchBrain = (
     });
 
     state.possessor = winnerIndex;
-    state.holdTimer = randomHold();
-    enterReactionState(players[winnerIndex]!.ai, "receive", state.holdTimer);
+    state.receiveTimer = RECEIVE_FACE_TIME;
+    state.commitTimer = 0;
+    const winner = players[winnerIndex]!;
+    faceGoal(winner.body, winner.ai, winner.team.attackingDirection);
     return outcome;
   }
-
-  state.holdTimer -= delta;
-  if (state.holdTimer > 0) return null;
 
   const possessor = players[state.possessor];
   if (!possessor) {
@@ -187,60 +245,91 @@ export const stepMatchBrain = (
     return null;
   }
   const from = state.possessor;
+  const attackDir = possessor.team.attackingDirection;
+  const selfPos = posOf(possessor);
+  const opponents = opponentPositions(players, possessor.team.id);
 
-  const goalZ = opponentGoalZ(possessor.team);
-  const distToGoal = Math.hypot(ballPos.x, ballPos.z - goalZ);
+  // —— Just received: face goal, keep ball close (still no player teleport) ——
+  if (state.receiveTimer > 0) {
+    state.receiveTimer -= delta;
+    faceGoal(possessor.body, possessor.ai, attackDir);
+    const v = possessor.body.linvel();
+    carryBallAhead(ball, selfPos, { x: -selfPos.x * 0.2, z: attackDir }, { x: v.x, z: v.z });
+    if (state.receiveTimer <= 0) possessor.ai.fsmState = "dribble";
+    return null;
+  }
 
-  if (distToGoal < SHOOT_RANGE && Math.random() < SHOOT_PROBABILITY) {
-    const dx = -ballPos.x;
-    const dz = goalZ - ballPos.z;
-    const dist = Math.hypot(dx, dz) || 1;
-    ball.setLinvel({ x: (dx / dist) * SHOT_SPEED, y: 3, z: (dz / dist) * SHOT_SPEED }, true);
+  // —— Step 26: decide shoot → pass → dribble → move ——
+  state.commitTimer -= delta;
+  const decision =
+    state.commitTimer > 0
+      ? ({ kind: "dribble" } as const)
+      : decideAction({
+          ball: ballXZ,
+          attackDir,
+          preferredFoot: possessor.ai.preferredFoot,
+          teammates: teammateEntries(players, possessor.team.id, from),
+          opponents,
+          keeperPos: opponentKeeperPos(players, possessor.team),
+        });
 
-    const scored = Math.random() < GOAL_PROBABILITY;
+  if (decision.kind === "shoot") {
+    const { plan } = decision;
+    ball.setLinvel(
+      { x: plan.direction.x * plan.power, y: 2 + plan.quality * 2, z: plan.direction.z * plan.power },
+      true,
+    );
+    ball.setAngvel({ x: 0, y: plan.spin * 8, z: 0 }, true);
+
+    const scored = Math.random() < GOAL_PROBABILITY_BASE + plan.quality * 0.35;
     enterReactionState(
       possessor.ai,
       scored ? "celebrate" : "shoot",
       scored ? CELEBRATE_DURATION : REACTION_DURATION,
     );
-
     state.possessor = null;
     return { kind: "shot", by: from, team: possessor.team.id, scored };
   }
 
-  const candidates = players
-    .map((player, i) =>
-      player && i !== state.possessor && player.team.id === possessor.team.id ? i : null,
-    )
-    .filter((i): i is number => i !== null);
+  if (decision.kind === "pass") {
+    const receiverIndex = decision.target.index;
+    const receiver = players[receiverIndex];
+    if (!receiver) {
+      state.possessor = null;
+      return null;
+    }
 
-  if (candidates.length === 0) {
+    const receiverPos = posOf(receiver);
+    const dx = receiverPos.x - ballXZ.x;
+    const dz = receiverPos.z - ballXZ.z;
+    const distance = Math.hypot(dx, dz) || 1;
+    const speed = MathUtils.clamp(distance * 0.5, MIN_PASS_SPEED, MAX_PASS_SPEED);
+
+    ball.setLinvel({ x: (dx / distance) * speed, y: 2, z: (dz / distance) * speed }, true);
+    enterReactionState(possessor.ai, "pass", REACTION_DURATION);
     state.possessor = null;
-    return null;
+
+    if (checkOffside(players, possessor.team, receiverIndex, ballXZ)) {
+      return {
+        kind: "offside",
+        by: receiverIndex,
+        team: possessor.team.id,
+        position: { x: ballXZ.x, z: ballXZ.z },
+      };
+    }
+    return { kind: "pass", from, to: receiverIndex };
   }
 
-  const receiverIndex = candidates[Math.floor(Math.random() * candidates.length)];
-  const receiver = players[receiverIndex]!;
+  // Dribble / move: steer + carry ball ahead
+  if (state.commitTimer <= 0) state.commitTimer = 0.75;
+  const steer =
+    decision.kind === "dribble"
+      ? dribbleSteer(selfPos, attackDir, opponents)
+      : moveSteer(selfPos, attackDir);
 
-  const receiverPos = receiver.body.translation();
-  const dx = receiverPos.x - ballPos.x;
-  const dz = receiverPos.z - ballPos.z;
-  const distance = Math.hypot(dx, dz) || 1;
-  const speed = MathUtils.clamp(distance * 0.5, MIN_PASS_SPEED, MAX_PASS_SPEED);
-
-  ball.setLinvel({ x: (dx / distance) * speed, y: 2, z: (dz / distance) * speed }, true);
-  enterReactionState(possessor.ai, "pass", REACTION_DURATION);
-
-  state.possessor = null;
-
-  if (checkOffside(players, possessor.team, receiverIndex, ballPos)) {
-    return {
-      kind: "offside",
-      by: receiverIndex,
-      team: possessor.team.id,
-      position: { x: ballPos.x, z: ballPos.z },
-    };
-  }
-
-  return { kind: "pass", from, to: receiverIndex };
+  applySteer(possessor.body, steer);
+  possessor.ai.fsmState = "dribble";
+  const v = possessor.body.linvel();
+  carryBallAhead(ball, selfPos, steer, { x: v.x, z: v.z });
+  return null;
 };

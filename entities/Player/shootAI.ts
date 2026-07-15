@@ -32,8 +32,6 @@ export const evaluateShot = (
   keeperPos: Pos2 | null,
 ): ShotEvaluation => {
   const goalZ = attackDir * 52.5;
-  const dx = -ball.x; // aim toward goal center x=0 by default
-  const dz = goalZ - ball.z;
   const distance = Math.hypot(ball.x, ball.z - goalZ);
   const distanceScore = distance > SHOOT_RANGE ? 0 : 1 - distance / SHOOT_RANGE;
 
