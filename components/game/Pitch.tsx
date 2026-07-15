@@ -1,14 +1,15 @@
 import { RigidBody } from "@react-three/rapier";
+import { PITCH_WIDTH, PITCH_LENGTH } from "./pitchDimensions";
 
-const Stadium = () => {
+const Pitch = () => {
   return (
     <RigidBody type="fixed" colliders="cuboid">
       <mesh receiveShadow position={[0, -0.5, 0]}>
-        <boxGeometry args={[68, 1, 105]} />
+        <boxGeometry args={[PITCH_WIDTH, 1, PITCH_LENGTH]} />
         <meshStandardMaterial color="#2e7d32" />
       </mesh>
     </RigidBody>
   );
 };
 
-export default Stadium;
+export default Pitch;

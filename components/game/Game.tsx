@@ -1,22 +1,31 @@
+import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
-import Lights from "./Lights";
-import Stadium from "./Stadium";
-import Players from "./Players";
-import Ball from "./Ball";
-import Referee from "./Referee";
 import HUD from "./HUD";
+import Scene from "./Scene";
+import Skybox from "./Skybox";
 
 const Game = () => {
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh" }}>
-      <Canvas shadows camera={{ position: [0, 15, 25], fov: 50 }}>
-        <Lights />
+    <div style={{ position: "fixed", inset: 0 }}>
+      <Canvas shadows>
+        <PerspectiveCamera makeDefault position={[0, 45, 90]} fov={50} />
+        <OrbitControls makeDefault target={[0, 0, 0]} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={5} maxDistance={300} />
+        <ambientLight intensity={0.5} />
+        <directionalLight
+          position={[50, 80, 50]}
+          intensity={1.4}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-160}
+          shadow-camera-right={160}
+          shadow-camera-top={160}
+          shadow-camera-bottom={-160}
+          shadow-camera-far={300}
+        />
+        <Skybox />
         <Physics>
-          <Stadium />
-          <Players />
-          <Ball />
-          <Referee />
+          <Scene />
         </Physics>
       </Canvas>
       <HUD />
