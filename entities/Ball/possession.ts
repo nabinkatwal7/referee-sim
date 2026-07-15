@@ -1,4 +1,5 @@
 import type { TeamId } from "../../engine/team/Team";
+import type { TouchRecord } from "./touch";
 
 // Who owns the ball, categorically: nobody (Loose), one team's outfield
 // players (Blue = home, Red = away — matches our team colors), or
@@ -6,12 +7,7 @@ import type { TeamId } from "../../engine/team/Team";
 // holding it is its own distinct situation — usually a save or back-pass).
 export type PossessionState = "loose" | "blue" | "red" | "goalkeeper";
 
-export type Touch = {
-  playerIndex: number;
-  team: TeamId;
-  role: string;
-  at: number; // match clock, seconds
-};
+export type Touch = TouchRecord;
 
 export type BallPossession = {
   owner: { state: PossessionState; playerIndex: number | null };
@@ -30,22 +26,21 @@ const stateFor = (team: TeamId, role: string): PossessionState => {
   return team === "home" ? "blue" : "red";
 };
 
-// A player has just gained the ball (pickup, pass reception, tackle win) —
-// shifts the touch history and updates the categorical owner.
 export const recordTouch = (
   possession: BallPossession,
   playerIndex: number,
   team: TeamId,
   role: string,
   at: number,
+  position: { x: number; z: number },
 ) => {
+  const touch: Touch = { playerIndex, team, role, at, position };
   possession.previousTouch = possession.lastTouch;
-  possession.lastTouch = { playerIndex, team, role, at };
+  possession.lastTouch = touch;
   possession.owner = { state: stateFor(team, role), playerIndex };
+  return touch;
 };
 
-// The ball has left anyone's control (a pass/shot in flight) — nobody owns
-// it until it's next picked up.
 export const setLoose = (possession: BallPossession) => {
   possession.owner = { state: "loose", playerIndex: null };
 };

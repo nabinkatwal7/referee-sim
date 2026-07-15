@@ -13,7 +13,7 @@ import {
   type BrainState,
   type MatchEvent as BrainEvent,
 } from "../../entities/Player/brain";
-import { checkBoundary } from "../../entities/Ball/boundary";
+import { detectBallOut } from "../../entities/Ball/ballOut";
 import { detectCollision } from "../../entities/Ball/collision";
 import {
   findNearestPlayer,
@@ -25,6 +25,17 @@ import {
   setLoose,
   type BallPossession,
 } from "../../entities/Ball/possession";
+import {
+  beginRestart,
+  stepRestart,
+  type RestartState,
+} from "../../entities/Ball/restarts";
+import {
+  createTouchLog,
+  lastTouchTeam as touchLogTeam,
+  recordBallTouch,
+  type TouchLog,
+} from "../../entities/Ball/touch";
 import type { Role } from "../../entities/formation";
 import { detectPlayerCollisions } from "../../entities/Player/collisionDetector";
 import { resolveOverlaps } from "../../entities/Player/avoidance";
@@ -33,6 +44,7 @@ import {
   type GoalkeeperAIState,
   type KeeperFSMState,
 } from "../../entities/Player/goalkeeper";
+import { enterReactionState } from "../../entities/Player/ai";
 import { stepStamina } from "../../entities/Player/stamina";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
@@ -104,10 +116,12 @@ export class GameLoop {
   private referee: RefereeHandle | null = null;
   private brain: BrainState = createBrainState();
   // Engine truth for who owns / last touched the ball (Loose|Blue|Red|GK).
-  // Distinct from Zustand's simpler `possession: playerIndex` mirror.
   private ballPossession: BallPossession = createBallPossession();
+  private touchLog: TouchLog = createTouchLog();
   private nearestToBall: NearestPlayer | null = null;
   private lastTouchTeam: TeamId | null = null;
+  /** Active throw-in / corner / goal-kick sequence (null = open play). */
+  private restart: RestartState | null = null;
   private previousBallVelocity = { x: 0, z: 0 };
   private replayBuffer = new ReplayBuffer();
   private replayFrames: FrameSnapshot[] = [];
@@ -131,6 +145,7 @@ export class GameLoop {
       if (state === MatchState.KICKOFF) {
         if (previous === MatchState.HALF_TIME) this.flipAttackingDirections();
         this.resetForKickoff();
+        this.bus.emit({ kind: "kickoff", at: this.clock });
       }
     });
   }
@@ -327,8 +342,10 @@ export class GameLoop {
     });
     this.brain = createBrainState();
     this.ballPossession = createBallPossession();
+    this.touchLog = createTouchLog();
     this.nearestToBall = null;
     this.lastTouchTeam = null;
+    this.restart = null;
   }
 
   private flipAttackingDirections() {
@@ -378,6 +395,14 @@ export class GameLoop {
   private updateBall(delta: number) {
     if (!this.ball) return;
 
+    // —— Dead-ball restart in progress (throw-in / corner / goal kick) ——
+    if (this.restart) {
+      this.stepActiveRestart(delta);
+      const v = this.ball.linvel();
+      this.previousBallVelocity = { x: v.x, z: v.z };
+      return;
+    }
+
     // Collision check uses velocity as physics left it, before any kick we
     // apply below — otherwise our own passes/shots would look like hits.
     if (detectCollision(this.ball, this.previousBallVelocity)) {
@@ -385,18 +410,93 @@ export class GameLoop {
       this.bus.emit({ kind: "collision", position: { x: p.x, z: p.z }, at: this.clock });
     }
 
-    // Step 24 — nearest player every frame (receiver candidate).
     this.nearestToBall = this.findNearestPlayerToBall();
 
     const result = stepMatchBrain(this.ball, this.players, this.brain, delta, this.nearestToBall);
     if (result) this.handleBrainEvent(result);
     this.syncBallPossession();
 
-    const boundary = checkBoundary(this.ball, this.lastTouchTeam);
-    if (boundary) this.bus.emit({ ...boundary, at: this.clock });
+    // Step 42 — entire ball outside field?
+    this.checkBallOutOfPlay();
 
     const v = this.ball.linvel();
     this.previousBallVelocity = { x: v.x, z: v.z };
+  }
+
+  private stepActiveRestart(delta: number) {
+    if (!this.ball || !this.restart) return;
+
+    const slots = this.players.map((p) =>
+      p
+        ? {
+            body: p.body,
+            teamId: p.team.id,
+            role: p.role,
+          }
+        : null,
+    );
+
+    const result = stepRestart(this.restart, this.ball, slots, delta);
+    if (result.status !== "complete") return;
+
+    // Taker just delivered — record the touch, clear restart, resume play.
+    if (result.takerIndex >= 0) {
+      const taker = this.players[result.takerIndex];
+      if (taker) {
+        const bp = this.ball.translation();
+        this.commitTouch(result.takerIndex, { x: bp.x, z: bp.z });
+      }
+    }
+    this.restart = null;
+    this.brain = createBrainState();
+  }
+
+  private checkBallOutOfPlay() {
+    if (!this.ball || this.restart) return;
+
+    const out = detectBallOut(
+      this.ball,
+      this.lastTouchTeam ?? touchLogTeam(this.touchLog),
+      this.homeTeam.attackingDirection,
+    );
+    if (!out) return;
+
+    const at = this.clock;
+
+    if (out.kind === "goal") {
+      const by = this.touchLog.last?.playerIndex ?? this.ballPossession.lastTouch?.playerIndex ?? 0;
+      this.getTeam(out.team).addGoal();
+      this.bus.emit({ kind: "goal", by, team: out.team, at });
+      // Celebrate briefly for the scorer if we know them.
+      const scorer = this.players[by];
+      if (scorer) enterReactionState(scorer.ai, "celebrate", 3);
+      this.brain = createBrainState();
+      this.ballPossession = createBallPossession();
+      this.matchState.reportGoal();
+      return;
+    }
+
+    this.bus.emit({ ...out, at });
+    this.brain = createBrainState();
+    setLoose(this.ballPossession);
+    this.restart = beginRestart(out, this.ball);
+  }
+
+  /** Step 41 — persist touch on possession + kick. */
+  private commitTouch(playerIndex: number, position: { x: number; z: number }) {
+    const player = this.players[playerIndex];
+    if (!player) return;
+    const role = player.team.players.find((p) => p.index === playerIndex)?.role ?? player.role;
+    const touch = recordTouch(
+      this.ballPossession,
+      playerIndex,
+      player.team.id,
+      role,
+      this.clock,
+      position,
+    );
+    recordBallTouch(this.touchLog, touch);
+    this.lastTouchTeam = player.team.id;
   }
 
   private findNearestPlayerToBall(): NearestPlayer | null {
@@ -422,35 +522,29 @@ export class GameLoop {
       return;
     }
 
-    const player = this.players[idx];
-    if (!player) return;
-    const role = player.team.players.find((p) => p.index === idx)?.role ?? "CM";
-    recordTouch(this.ballPossession, idx, player.team.id, role, this.clock);
-    this.lastTouchTeam = player.team.id;
+    const ballPos = this.ball?.translation();
+    this.commitTouch(idx, ballPos ? { x: ballPos.x, z: ballPos.z } : { x: 0, z: 0 });
   }
 
   private handleBrainEvent(result: BrainEvent) {
     const at = this.clock;
+    const ballPos = this.ball?.translation();
+    const pos = ballPos ? { x: ballPos.x, z: ballPos.z } : { x: 0, z: 0 };
 
     switch (result.kind) {
       case "pass":
-        this.lastTouchTeam = this.players[result.to]?.team.id ?? this.lastTouchTeam;
+        this.commitTouch(result.from, pos);
         this.bus.emit({ ...result, at });
         break;
 
       case "tackle":
-        this.lastTouchTeam = this.players[result.by]?.team.id ?? this.lastTouchTeam;
+        this.commitTouch(result.by, pos);
         this.bus.emit({ ...result, at });
         break;
 
       case "shot":
-        this.lastTouchTeam = result.team;
-        this.bus.emit({ ...result, at });
-        if (result.scored) {
-          this.getTeam(result.team).addGoal();
-          this.bus.emit({ kind: "goal", by: result.by, team: result.team, at });
-          this.matchState.reportGoal();
-        }
+        this.commitTouch(result.by, pos);
+        this.bus.emit({ ...result, scored: false, at });
         break;
 
       case "foul": {
@@ -471,7 +565,6 @@ export class GameLoop {
         const vision = this.evaluateVision(result.position);
         const given = decideCall(vision);
         this.bus.emit({ ...result, given, visionQuality: vision.quality, at });
-        // Missed call: play continues as though the pass had simply succeeded.
         if (!given) this.lastTouchTeam = result.team;
         break;
       }
@@ -479,7 +572,7 @@ export class GameLoop {
   }
 
   private updateCollisions() {
-    if (!this.ball) return;
+    if (!this.ball || this.restart) return;
     // Only one incident under review at a time — don't bother detecting
     // more while one's still awaiting the player's whistle.
     if (gameStateStore.getState().pendingFoul) return;

@@ -42,9 +42,7 @@ const TACKLE_WIN_PROBABILITY = 0.4;
 const DEFEND_TACKLE_WIN = 0.35;
 
 const REACTION_DURATION = 0.5;
-const CELEBRATE_DURATION = 3;
 const RECEIVE_FACE_TIME = 0.45;
-const GOAL_PROBABILITY_BASE = 0.15; // scaled up by shot quality
 
 const OWN_GOAL_LINE = PITCH_LENGTH / 2;
 
@@ -322,14 +320,10 @@ export const stepMatchBrain = (
     );
     ball.setAngvel({ x: 0, y: plan.spin * 8, z: 0 }, true);
 
-    const scored = Math.random() < GOAL_PROBABILITY_BASE + plan.quality * 0.35;
-    enterReactionState(
-      possessor.ai,
-      scored ? "celebrate" : "shoot",
-      scored ? CELEBRATE_DURATION : REACTION_DURATION,
-    );
+    // Goals are detected by the ball-out / goal-line rules — never a coin flip.
+    enterReactionState(possessor.ai, "shoot", REACTION_DURATION);
     state.possessor = null;
-    return { kind: "shot", by: from, team: possessor.team.id, scored };
+    return { kind: "shot", by: from, team: possessor.team.id, scored: false };
   }
 
   if (decision.kind === "pass") {

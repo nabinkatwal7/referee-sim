@@ -12,10 +12,9 @@ export type GoalEvent = Base & { kind: "goal"; by: number; team: Team };
 export type CollisionEvent = Base & { kind: "collision"; position: Vec2 };
 export type ThrowInEvent = Base & { kind: "throwIn"; team: Team; position: Vec2 };
 export type CornerEvent = Base & { kind: "corner"; team: Team; position: Vec2 };
+export type GoalKickEvent = Base & { kind: "goalKick"; team: Team; position: Vec2 };
+export type KickoffEvent = Base & { kind: "kickoff" };
 
-// The judgment calls: something happened (ground truth), and separately the
-// referee either saw it well enough to call it correctly or didn't —
-// see engine/referee/vision.ts. `given` is the referee's actual decision.
 export type FoulEvent = Base & {
   kind: "foul";
   by: number;
@@ -29,7 +28,7 @@ export type PenaltyEvent = Base & {
   kind: "penalty";
   by: number;
   against: number;
-  team: Team; // team awarded the penalty
+  team: Team;
   position: Vec2;
   given: boolean;
   visionQuality: number;
@@ -44,10 +43,6 @@ export type OffsideEvent = Base & {
   visionQuality: number;
 };
 
-// Player collision, no ball involved, high force -> the engine flags it but
-// does NOT decide anything. No `given` field here: this is handed to the
-// human player via the Whistle System (engine/referee/whistle.ts) instead of
-// being auto-resolved like Foul/Penalty/Offside.
 export type PossibleFoulEvent = Base & {
   kind: "possibleFoul";
   playerA: number;
@@ -66,6 +61,8 @@ export type MatchEvent =
   | CollisionEvent
   | ThrowInEvent
   | CornerEvent
+  | GoalKickEvent
+  | KickoffEvent
   | FoulEvent
   | PenaltyEvent
   | OffsideEvent
