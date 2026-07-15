@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { PITCH_WIDTH, PITCH_LENGTH, PENALTY_BOX_DEPTH, PENALTY_BOX_WIDTH } from "./pitchDimensions";
+import {
+  PENALTY_BOX_DEPTH,
+  PENALTY_BOX_WIDTH,
+  PITCH_LENGTH,
+  PITCH_WIDTH,
+} from "./pitchDimensions";
 
 const SCALE = 12; // px per meter
 
@@ -17,8 +22,18 @@ const drawPenaltyArea = (
   const spotDist = 11 * SCALE;
   const arcRadius = 9.15 * SCALE;
 
-  ctx.strokeRect(w / 2 - penaltyWidth / 2, edgeY, penaltyWidth, inward * penaltyDepth);
-  ctx.strokeRect(w / 2 - sixYardWidth / 2, edgeY, sixYardWidth, inward * sixYardDepth);
+  ctx.strokeRect(
+    w / 2 - penaltyWidth / 2,
+    edgeY,
+    penaltyWidth,
+    inward * penaltyDepth,
+  );
+  ctx.strokeRect(
+    w / 2 - sixYardWidth / 2,
+    edgeY,
+    sixYardWidth,
+    inward * sixYardDepth,
+  );
 
   const spotY = edgeY + inward * spotDist;
   ctx.beginPath();

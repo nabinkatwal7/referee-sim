@@ -26,7 +26,7 @@ const Referee = ({ gameLoop }: Props) => {
   );
 
   return (
-    <RigidBody ref={setRef} position={REFEREE_START_POSITION} colliders="hull">
+    <RigidBody ref={setRef} position={REFEREE_START_POSITION} colliders="hull" lockRotations>
       <mesh castShadow receiveShadow>
         <capsuleGeometry args={[0.35, 1.2, 4, 8]} />
         <meshStandardMaterial color="#212121" />

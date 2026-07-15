@@ -26,7 +26,7 @@ const Player = ({ index, home, team, color = "#1976d2", name, role, gameLoop }: 
   );
 
   return (
-    <RigidBody ref={setRef} position={home} colliders="hull">
+    <RigidBody ref={setRef} position={home} colliders="hull" lockRotations>
       <mesh castShadow receiveShadow>
         <capsuleGeometry args={[0.4, 1.2, 4, 8]} />
         <meshStandardMaterial color={color} />

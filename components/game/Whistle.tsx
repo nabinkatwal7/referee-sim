@@ -1,6 +1,6 @@
-import { useGameStore } from "./useGameState";
-import { makeDecision } from "../../engine/referee/whistle";
 import type { DecisionAction } from "../../engine/referee/decision";
+import { makeDecision } from "../../engine/referee/whistle";
+import { useGameStore } from "./useGameState";
 
 const OPTIONS: { action: DecisionAction; label: string }[] = [
   { action: "playOn", label: "Play On" },
@@ -34,7 +34,9 @@ const Whistle = () => {
         color: "white",
       }}
     >
-      <div style={{ fontSize: 18, fontWeight: 600 }}>Incident: #{foul.playerA} vs #{foul.playerB}</div>
+      <div style={{ fontSize: 18, fontWeight: 600 }}>
+        Incident: #{foul.playerA} vs #{foul.playerB}
+      </div>
       <div style={{ opacity: 0.8, fontSize: 13 }}>What's the call?</div>
       <div style={{ display: "flex", gap: "0.75rem" }}>
         {OPTIONS.map(({ action, label }) => (
