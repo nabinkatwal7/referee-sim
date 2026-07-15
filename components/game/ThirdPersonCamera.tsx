@@ -41,7 +41,7 @@ const ThirdPersonCamera = ({ target }: Props) => {
       makeDefault
       maxPolarAngle={Math.PI / 2 - 0.05}
       minDistance={5}
-      maxDistance={300}
+      maxDistance={700}
     />
   );
 };

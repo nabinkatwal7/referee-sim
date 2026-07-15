@@ -22,19 +22,20 @@ const Game = () => {
             REFEREE_START_POSITION[2] + 16,
           ]}
           fov={50}
+          far={20000}
         />
         <ThirdPersonCamera target={refereeRef} />
         <ambientLight intensity={0.5} />
         <directionalLight
-          position={[50, 80, 50]}
+          position={[80, 140, 80]}
           intensity={1.4}
           castShadow
           shadow-mapSize={[2048, 2048]}
-          shadow-camera-left={-160}
-          shadow-camera-right={160}
-          shadow-camera-top={160}
-          shadow-camera-bottom={-160}
-          shadow-camera-far={300}
+          shadow-camera-left={-260}
+          shadow-camera-right={260}
+          shadow-camera-top={260}
+          shadow-camera-bottom={-260}
+          shadow-camera-far={600}
         />
         <Skybox />
         <Physics>
