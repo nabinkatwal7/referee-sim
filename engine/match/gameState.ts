@@ -1,11 +1,11 @@
-import { create } from "zustand";
+import { createStore } from "zustand/vanilla";
 import type { PossibleFoulEvent } from "./events";
 
 export type Score = { home: number; away: number };
 export type Card = { playerIndex: number; type: "yellow" | "red" };
 export type ReplayState = "live" | "replay";
 
-type GameState = {
+export type GameState = {
   score: Score;
   time: number; // seconds elapsed in the match
   cards: Card[];
@@ -36,10 +36,16 @@ type GameState = {
 
 // Game state only — score, clock, cards, possession, the current event,
 // replay state, pause (plus the whistle/rating fields this feature needs).
-// Positions/physics belong to the engine (GameLoop), not here; the engine
-// writes into this store via its vanilla API (getState/setState), which is
-// why this stays usable from a plain class with no React import.
-export const useGameStore = create<GameState>((set) => ({
+// Positions/physics belong to the engine (GameLoop), not here.
+//
+// Architecture rule: the engine must not know React exists. This is built
+// with zustand/vanilla's createStore, which is a plain object with
+// getState/setState/subscribe — no React import anywhere in this file, and
+// none needed by GameLoop/storeSync/whistle either. A separate React hook
+// (components/game/useGameState.ts) wraps THIS store with zustand/react's
+// useStore for the UI layer to consume reactively; the engine never touches
+// that hook.
+export const gameStateStore = createStore<GameState>((set) => ({
   score: { home: 0, away: 0 },
   time: 0,
   cards: [],

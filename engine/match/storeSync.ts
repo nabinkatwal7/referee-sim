@@ -1,6 +1,6 @@
 import type { EventBus } from "./EventBus";
 import type { MatchEvent, Team } from "./events";
-import { useGameStore } from "./gameState";
+import { gameStateStore } from "./gameState";
 
 const teamToSide = (team: Team): "home" | "away" => (team === "A" ? "home" : "away");
 const CARD_PROBABILITY_ON_FOUL = 0.15; // most fouls are just a free kick, not a booking
@@ -40,7 +40,7 @@ const describe = (event: MatchEvent): string => {
 // brain) touches the store directly; they only emit events.
 export const wireStoreToEvents = (bus: EventBus) => {
   return bus.subscribe((event) => {
-    const store = useGameStore.getState();
+    const store = gameStateStore.getState();
 
     if (event.kind === "possibleFoul") {
       // Only one incident can be under review at a time; ignore new ones

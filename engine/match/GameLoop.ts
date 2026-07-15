@@ -1,4 +1,4 @@
-import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
+import type { RapierRigidBody } from "@react-three/rapier";
 import * as THREE from "three";
 import type { Camera } from "three";
 import { createPlayerAIState, stepPlayerAI, type PlayerAIState } from "../../entities/Player/ai";
@@ -16,7 +16,7 @@ import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/m
 import { computeVision, decideCall, type Vision } from "../referee/vision";
 import { expirePendingFoul } from "../referee/whistle";
 import { EventBus } from "./EventBus";
-import { useGameStore } from "./gameState";
+import { gameStateStore } from "./gameState";
 import { ReplayBuffer, restoreSnapshot, type FrameSnapshot } from "./replay";
 import { wireStoreToEvents } from "./storeSync";
 
@@ -86,12 +86,12 @@ export class GameLoop {
   }
 
   tick(delta: number) {
-    if (useGameStore.getState().replayState === "replay") {
+    if (gameStateStore.getState().replayState === "replay") {
       this.updateReplayPlayback(delta);
       return;
     }
 
-    if (useGameStore.getState().paused) return;
+    if (gameStateStore.getState().paused) return;
 
     this.updateClock(delta);
     this.updateAI(delta);
@@ -110,7 +110,7 @@ export class GameLoop {
   // 15 seconds of recorded snapshots, then resumes automatically. Refuses to
   // start mid-whistle-decision or with nothing recorded yet.
   startReplay(): boolean {
-    const store = useGameStore.getState();
+    const store = gameStateStore.getState();
     if (store.replayState === "replay" || store.decisionWindowOpen || this.replayBuffer.isEmpty) {
       return false;
     }
@@ -124,8 +124,8 @@ export class GameLoop {
   }
 
   private endReplay() {
-    useGameStore.getState().setReplayState("live");
-    useGameStore.getState().setPaused(false);
+    gameStateStore.getState().setReplayState("live");
+    gameStateStore.getState().setPaused(false);
     this.replayFrames = [];
     this.replayIndex = 0;
     this.replayElapsed = 0;
@@ -179,7 +179,7 @@ export class GameLoop {
     const whole = Math.floor(this.clock);
     if (whole !== this.clockWholeSecond) {
       this.clockWholeSecond = whole;
-      useGameStore.getState().setTime(whole);
+      gameStateStore.getState().setTime(whole);
     }
   }
 
@@ -267,7 +267,7 @@ export class GameLoop {
     if (!this.ball) return;
     // Only one incident under review at a time — don't bother detecting
     // more while one's still awaiting the player's whistle.
-    if (useGameStore.getState().pendingFoul) return;
+    if (gameStateStore.getState().pendingFoul) return;
 
     const ballPos = this.ball.translation();
     const candidate = detectPlayerCollisions(this.players, ballPos);

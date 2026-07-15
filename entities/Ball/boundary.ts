@@ -1,4 +1,4 @@
-import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
+import type { RapierRigidBody } from "@react-three/rapier";
 import { PITCH_WIDTH, PITCH_LENGTH, GOAL_WIDTH } from "../../components/game/pitchDimensions";
 import type { Team } from "../Player/brain";
 

@@ -1,4 +1,4 @@
-import { useGameStore } from "../../engine/match/gameState";
+import { useGameStore } from "./useGameState";
 import { makeDecision } from "../../engine/referee/whistle";
 import type { DecisionAction } from "../../engine/referee/decision";
 

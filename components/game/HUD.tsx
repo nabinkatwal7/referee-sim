@@ -1,4 +1,4 @@
-import { useGameStore } from "../../engine/match/gameState";
+import { useGameStore } from "./useGameState";
 
 const formatClock = (seconds: number) => {
   const m = Math.floor(seconds / 60)

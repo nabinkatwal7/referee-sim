@@ -1,5 +1,5 @@
 import { scoreDecision, type DecisionAction, PENDING_TIMEOUT } from "./decision";
-import { useGameStore } from "../match/gameState";
+import { gameStateStore } from "../match/gameState";
 
 const describeAction = (action: DecisionAction): string =>
   ({
@@ -15,7 +15,7 @@ const describeAction = (action: DecisionAction): string =>
 // to THIS moment — deliberation time after the window opens doesn't count
 // against the player, same as a real referee who has already stopped play.
 export const blowWhistle = (currentMatchTime: number) => {
-  const store = useGameStore.getState();
+  const store = gameStateStore.getState();
   if (!store.pendingFoul || store.decisionWindowOpen) return;
   const reactionTime = Math.max(0, currentMatchTime - store.pendingFoul.at);
   store.openDecisionWindow(reactionTime);
@@ -23,7 +23,7 @@ export const blowWhistle = (currentMatchTime: number) => {
 
 // The player picks one of Play On / Advantage / Foul / Yellow / Red.
 export const makeDecision = (action: DecisionAction) => {
-  const store = useGameStore.getState();
+  const store = gameStateStore.getState();
   const foul = store.pendingFoul;
   if (!foul || store.pendingReactionTime === null) return;
 
@@ -44,7 +44,7 @@ export const makeDecision = (action: DecisionAction) => {
 // too long, it resolves itself as a missed "Play On" — always late, scored
 // the same way a real decision would be.
 export const expirePendingFoul = (currentMatchTime: number) => {
-  const store = useGameStore.getState();
+  const store = gameStateStore.getState();
   const foul = store.pendingFoul;
   if (!foul || store.decisionWindowOpen) return;
   if (currentMatchTime - foul.at < PENDING_TIMEOUT) return;

@@ -1,4 +1,4 @@
-import type { RigidBody as RapierRigidBody } from "@dimforge/rapier3d-compat";
+import type { RapierRigidBody } from "@react-three/rapier";
 import type { PlayerFSMState } from "../../entities/Player/ai";
 
 export type PlayerFrame = {

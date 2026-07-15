@@ -4,7 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { Physics } from "@react-three/rapier";
 import { GameLoop } from "../../engine/match/GameLoop";
 import GameLoopRunner from "../../engine/match/GameLoopRunner";
-import { useGameStore } from "../../engine/match/gameState";
+import { useGameStore } from "./useGameState";
 import { REFEREE_KEYBOARD_MAP } from "../../entities/Referee/controls";
 import HUD from "./HUD";
 import ReplayListener from "./ReplayListener";
