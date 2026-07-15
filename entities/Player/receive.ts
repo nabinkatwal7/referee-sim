@@ -3,13 +3,13 @@ import type { Pos2 } from "../Ball/nearestPlayer";
 import type { PlayerAIState } from "./ai";
 import { applySteering, spacedApproachTarget } from "./avoidance";
 import { predictBallPosition, timeToNearPoint } from "./ballPrediction";
+import { gaitSpeed, involvementGait } from "./gait";
+import { staminaSpeedFactor } from "./stamina";
 
 // Receiving Ball — running → ball arriving → slow down → receive → face goal.
 // No teleporting: steer toward predicted ball; never snap position.
 
 export const APPROACH_RADIUS = 14;
-const APPROACH_SPEED = 3.2;
-const RECEIVE_SPEED = 1.6;
 
 export const isBallArriving = (
   player: Pos2,
@@ -36,14 +36,23 @@ export const approachBall = (
   ballVel: Pos2 = { x: 0, z: 0 },
   neighbors: Pos2[] = [],
   chaseSide: 1 | -1 = 1,
+  drive = 0.6,
 ) => {
   const pos = body.translation();
   const self: Pos2 = { x: pos.x, z: pos.z };
   const t = timeToNearPoint(ball, ballVel, self);
   const predicted = predictBallPosition(ball, ballVel, Math.max(0.2, t));
   const target = spacedApproachTarget(self, predicted, neighbors, chaseSide, 0);
-  const dist = Math.hypot(target.x - self.x, target.z - self.z) || 1;
-  const speed = dist > 4 ? APPROACH_SPEED : RECEIVE_SPEED;
+  const gait = involvementGait(self, predicted, drive);
+  // Near pickup always ease to a jog/walk — no full sprint into the ball.
+  const dist = Math.hypot(target.x - self.x, target.z - self.z);
+  const eased =
+    gait === "sprint" && dist < 5
+      ? "run"
+      : gait === "idle"
+        ? "walk"
+        : gait;
+  const speed = gaitSpeed(eased, ai.pace, staminaSpeedFactor(ai.stamina));
   applySteering(
     body,
     { x: target.x - self.x, z: target.z - self.z },
@@ -63,6 +72,7 @@ export const faceGoal = (
   const dz = attackDir;
   const len = Math.hypot(dx, dz) || 1;
   const linvel = body.linvel();
-  body.setLinvel({ x: (dx / len) * 0.8, y: linvel.y, z: (dz / len) * 0.8 }, true);
+  const speed = gaitSpeed("walk", ai.pace, staminaSpeedFactor(ai.stamina)) * 0.55;
+  body.setLinvel({ x: (dx / len) * speed, y: linvel.y, z: (dz / len) * speed }, true);
   ai.fsmState = "receive";
 };

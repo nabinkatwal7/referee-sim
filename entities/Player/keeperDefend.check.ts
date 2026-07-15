@@ -1,4 +1,4 @@
-// Runnable self-check: npx --yes tsx entities/Player/keeperDefend.check.ts
+// Runnable: npx --yes tsx entities/Player/keeperDefend.check.ts
 import assert from "node:assert/strict";
 import { chooseDefendPhase, pickMarkTarget } from "./defend";
 import { createGoalkeeperAIState } from "./goalkeeper";
@@ -17,6 +17,7 @@ const base = {
   passTarget: null as null,
   attackDir: 1 as const,
   ownTeam: "home" as const,
+  role: "CM" as const,
   tactics: DEFAULT_TACTICS,
   neighbors: [] as { x: number; z: number }[],
   chaseSide: 1 as const,
@@ -52,7 +53,6 @@ assert.equal(
   chooseDefendPhase({
     ...base,
     self: { x: 0, z: 0 },
-    ball: { x: 2, z: 2 },
     carrier: { x: 1, z: 1 },
     mark: { x: 1, z: 1 },
     hasBallTeam: "away",
@@ -81,7 +81,6 @@ assert.equal(
   chooseDefendPhase({
     ...base,
     self: { x: 0, z: 0 },
-    ball: { x: 2, z: 2 },
     carrier: { x: 2, z: 2 },
     mark: { x: 2, z: 2 },
     hasBallTeam: "away",

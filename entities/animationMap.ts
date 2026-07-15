@@ -2,7 +2,15 @@ import type { CharacterAnimation } from "./Character";
 import type { PlayerFSMState } from "./Player/ai";
 import type { KeeperFSMState } from "./Player/goalkeeper";
 
-const SPRINT_THRESHOLD = 4; // m/s — matches the midpoint between WALK_SPEED and RUN_SPEED
+const JOG_THRESHOLD = 2.2;
+const SPRINT_THRESHOLD = 4.0;
+
+const locoFromSpeed = (speed: number): CharacterAnimation => {
+  if (speed < 0.35) return "idle";
+  if (speed >= SPRINT_THRESHOLD) return "sprint";
+  if (speed >= JOG_THRESHOLD) return "walk"; // ponytail: no jog clip — walk reads mid-tempo
+  return "walk";
+};
 
 // Maps our FSM states onto the clips the Kenney model actually ships. A few
 // are best-fit stand-ins rather than exact matches (no dedicated "shoot" or
@@ -16,13 +24,11 @@ export const mapPlayerAnimation = (
       return "idle";
     case "move":
     case "press":
-      return speed >= SPRINT_THRESHOLD ? "sprint" : "walk";
     case "recover":
-      return "walk";
-    case "receive":
-      return "pick-up";
     case "dribble":
-      return speed >= SPRINT_THRESHOLD ? "sprint" : "walk";
+      return locoFromSpeed(speed);
+    case "receive":
+      return speed > 1.2 ? locoFromSpeed(speed) : "pick-up";
     case "pass":
     case "shoot":
       return "attack-kick-right";
@@ -41,7 +47,7 @@ export const mapKeeperAnimation = (
     case "idle":
       return "idle";
     case "track":
-      return speed > 0.4 ? "walk" : "idle";
+      return locoFromSpeed(Math.min(speed, JOG_THRESHOLD + 0.1));
     case "intercept":
       return "sprint";
     case "dive":
@@ -53,7 +59,5 @@ export const mapKeeperAnimation = (
   }
 };
 
-export const mapRefereeAnimation = (speed: number): CharacterAnimation => {
-  if (speed < 0.3) return "idle";
-  return speed >= SPRINT_THRESHOLD ? "sprint" : "walk";
-};
+export const mapRefereeAnimation = (speed: number): CharacterAnimation =>
+  locoFromSpeed(speed);

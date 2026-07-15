@@ -1,6 +1,7 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import * as THREE from "three";
 import { applySteering } from "./avoidance";
+import { createPace, gaitSpeed } from "./gait";
 import {
   createStamina,
   staminaSpeedFactor,
@@ -9,13 +10,10 @@ import {
 } from "./stamina";
 import type { Pos2 } from "../Ball/nearestPlayer";
 
-const WALK_SPEED = 2.5;
-const RUN_SPEED = 6;
-const RUN_DISTANCE = 8;
 const ARRIVE_RADIUS = 0.5;
-const WANDER_RADIUS = 15;
-const MIN_PAUSE = 1;
-const MAX_PAUSE = 3;
+const WANDER_RADIUS = 12;
+const MIN_PAUSE = 1.5;
+const MAX_PAUSE = 4;
 
 export type PlayerFSMState =
   | "idle"
@@ -52,6 +50,8 @@ export type PlayerAIState = {
   stateTimer: number;
   preferredFoot: 1 | -1;
   stamina: StaminaState;
+  /** Per-player speed fingerprint (~0.88–1.12). */
+  pace: number;
 };
 
 const randomPause = () => MIN_PAUSE + Math.random() * (MAX_PAUSE - MIN_PAUSE);
@@ -77,6 +77,7 @@ export const createPlayerAIState = (
   stateTimer: 0,
   preferredFoot: Math.random() < 0.75 ? 1 : -1,
   stamina: createStamina(),
+  pace: createPace(),
 });
 
 export const enterReactionState = (
@@ -135,7 +136,8 @@ export const stepPlayerAI = (
 
   state.fsmState = "move";
   toTarget.normalize();
-  const base = distance > RUN_DISTANCE ? RUN_SPEED : WALK_SPEED;
-  const capped = base * staminaSpeedFactor(state.stamina);
+  // Wander is always casual — walk / jog only (real players don't sprint to idle roam).
+  const gait = distance > 6 ? "jog" : "walk";
+  const capped = gaitSpeed(gait, state.pace, staminaSpeedFactor(state.stamina));
   applySteering(body, { x: toTarget.x, z: toTarget.z }, capped, neighbors);
 };

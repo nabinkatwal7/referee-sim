@@ -18,10 +18,11 @@ import {
 import {
   applySteer,
   carryBallAhead,
+  dribbleGait,
   dribbleSteer,
   moveSteer,
-  DRIBBLE_SPEED,
 } from "./dribble";
+import { gaitSpeed, roleDrive } from "./gait";
 import {
   stepGoalkeeper,
   type GoalkeeperAIState,
@@ -225,6 +226,7 @@ export const stepMatchBrain = (
             ballVelXZ,
             neighbors,
             nearest.index % 2 === 0 ? 1 : -1,
+            roleDrive(candidate.role),
           );
         }
       }
@@ -380,10 +382,21 @@ export const stepMatchBrain = (
     .map((o, j) => (o && j !== from ? posOf(o) : null))
     .filter((x): x is Pos2 => !!x);
 
+  const nearestOpp =
+    opponents.length === 0
+      ? 99
+      : Math.min(
+          ...opponents.map((o) => Math.hypot(o.x - selfPos.x, o.z - selfPos.z)),
+        );
+
   applySteer(
     possessor.body,
     steer,
-    DRIBBLE_SPEED * staminaSpeedFactor(possessor.ai.stamina),
+    gaitSpeed(
+      dribbleGait(nearestOpp),
+      possessor.ai.pace,
+      staminaSpeedFactor(possessor.ai.stamina),
+    ),
     allOthers,
   );
   possessor.ai.fsmState = "dribble";
@@ -544,6 +557,7 @@ const stepFieldDefense = (
       allowChase: chasers.has(i),
       chaseRank: chaseRank.get(i) ?? 0,
       chaseSide: chaseSide.get(i) ?? (i % 2 === 0 ? 1 : -1),
+      role: p.role,
     });
 
     if (

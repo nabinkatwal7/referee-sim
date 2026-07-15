@@ -1,9 +1,19 @@
 import type { RapierRigidBody } from "@react-three/rapier";
 import type { TeamId } from "../../engine/team/Team";
+import type { Role } from "../formation";
 import type { Pos2 } from "../Ball/nearestPlayer";
 import { applySteering, spacedApproachTarget } from "./avoidance";
 import { predictBallPosition, timeToNearPoint } from "./ballPrediction";
 import type { PlayerAIState } from "./ai";
+import {
+  gaitSpeed,
+  interceptGait,
+  pressGait,
+  recoverGait,
+  tackleGait,
+  trackGait,
+  type Gait,
+} from "./gait";
 import { dynamicShapeTarget, shapePhaseFor, type PlayerAnchors } from "./positioning";
 import { staminaSpeedFactor } from "./stamina";
 import type { TacticalParams } from "./tactics";
@@ -15,10 +25,6 @@ import { DEFAULT_TACTICS } from "./tactics";
 
 export type DefendPhase = "track" | "intercept" | "press" | "tackle" | "recover";
 
-const PRESS_SPEED = 5.5;
-const TRACK_SPEED = 4;
-const RECOVER_SPEED = 4.5;
-const INTERCEPT_SPEED = 5.8;
 const TACKLE_RANGE = 2.6;
 const MARK_OFFSET = 2.5;
 
@@ -34,6 +40,7 @@ export type DefendContext = {
   attackDir: 1 | -1;
   hasBallTeam: TeamId | null;
   ownTeam: TeamId;
+  role: Role;
   tactics: TacticalParams;
   neighbors: Pos2[];
   /** Only the closest few teammates may press / intercept the ball. */
@@ -52,13 +59,36 @@ const moveToward = (
   body: RapierRigidBody,
   self: Pos2,
   target: Pos2,
-  speed: number,
+  gait: Gait,
+  ai: PlayerAIState,
   neighbors: Pos2[],
-  staminaMul: number,
 ) => {
   const dx = target.x - self.x;
   const dz = target.z - self.z;
-  applySteering(body, { x: dx, z: dz }, speed * staminaMul, neighbors);
+  const speed = gaitSpeed(gait, ai.pace, staminaSpeedFactor(ai.stamina));
+  if (speed < 0.2) {
+    body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
+    return;
+  }
+  applySteering(body, { x: dx, z: dz }, speed, neighbors);
+};
+
+/** Map gait → fsm so animations and wander don't all look identical. */
+const applyPhaseFsm = (ai: PlayerAIState, phase: DefendPhase, gait: Gait) => {
+  if (phase === "tackle" || phase === "intercept") {
+    ai.fsmState = "press";
+    return;
+  }
+  if (phase === "press") {
+    ai.fsmState = gait === "sprint" || gait === "run" ? "press" : "move";
+    return;
+  }
+  if (phase === "recover") {
+    ai.fsmState = gait === "walk" || gait === "idle" ? "recover" : gait === "jog" ? "move" : "press";
+    return;
+  }
+  // track
+  ai.fsmState = gait === "idle" ? "idle" : "move";
 };
 
 const markingSpot = (mark: Pos2, attackDir: 1 | -1): Pos2 => ({
@@ -74,7 +104,6 @@ export const chooseDefendPhase = (ctx: DefendContext): DefendPhase => {
 
   if (opponentHasBall && ctx.carrier) {
     const distCarrier = Math.hypot(ctx.carrier.x - ctx.self.x, ctx.carrier.z - ctx.self.z);
-    // Only first man engages the tackle — support holds the angle.
     if (ctx.allowChase && ctx.chaseRank === 0 && distCarrier < TACKLE_RANGE) return "tackle";
     if (ctx.allowChase && distCarrier < pressDist) return "press";
     if (ctx.allowChase && ctx.chaseRank === 0 && ctx.passTarget && ballSpeed > 3) {
@@ -107,24 +136,20 @@ export const stepDefendAI = (
   ctx: DefendContext,
 ): DefendResult => {
   const phase = chooseDefendPhase(ctx);
-  // ponytail: keep tackle as press-driven until enterReactionState wins the ball —
-  // setting "tackle" here with timer 0 freezes the runner every frame in FREEZE_STATES.
-  if (phase === "press" || phase === "tackle" || phase === "intercept") ai.fsmState = "press";
-  else if (phase === "recover") ai.fsmState = "recover";
-  else ai.fsmState = "move";
-
-  const pressMul = 0.85 + ctx.tactics.pressing * 0.4;
-  const stam = staminaSpeedFactor(ai.stamina);
   const n = ctx.neighbors;
-
   const focus = ctx.carrier ?? ctx.ball;
   const spaced = spacedApproachTarget(ctx.self, focus, n, ctx.chaseSide, ctx.chaseRank);
 
   switch (phase) {
     case "track": {
-      if (ctx.mark) moveToward(body, ctx.self, markingSpot(ctx.mark, ctx.attackDir), TRACK_SPEED, n, stam);
-      else if (ctx.carrier) moveToward(body, ctx.self, spaced, TRACK_SPEED, n, stam);
-      else body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
+      const spot = ctx.mark
+        ? markingSpot(ctx.mark, ctx.attackDir)
+        : spaced;
+      const gait = ctx.mark
+        ? trackGait(ctx.self, spot, ctx.role)
+        : trackGait(ctx.self, focus, ctx.role);
+      applyPhaseFsm(ai, phase, gait);
+      moveToward(body, ctx.self, spot, gait, ai, n);
       return { kind: "none", phase };
     }
     case "intercept": {
@@ -138,17 +163,22 @@ export const stepDefendAI = (
         ctx.chaseSide,
         ctx.chaseRank,
       );
-      moveToward(body, ctx.self, interceptAim, INTERCEPT_SPEED * pressMul, n, stam);
+      const gait = interceptGait();
+      applyPhaseFsm(ai, phase, gait);
+      moveToward(body, ctx.self, interceptAim, gait, ai, n);
       return { kind: "none", phase };
     }
     case "press": {
-      moveToward(body, ctx.self, spaced, PRESS_SPEED * pressMul, n, stam);
+      const gait = pressGait(ctx.self, focus, ctx.chaseRank, ctx.role);
+      applyPhaseFsm(ai, phase, gait);
+      moveToward(body, ctx.self, spaced, gait, ai, n);
       return { kind: "none", phase };
     }
     case "tackle": {
-      // Jockey into the shoulder, not through the torso.
       const shoulder = spacedApproachTarget(ctx.self, focus, n, ctx.chaseSide, 0);
-      moveToward(body, ctx.self, shoulder, PRESS_SPEED * pressMul * 1.05, n, stam);
+      const gait = tackleGait();
+      applyPhaseFsm(ai, phase, gait);
+      moveToward(body, ctx.self, shoulder, gait, ai, n);
       return { kind: "tackle", phase: "tackle" };
     }
     case "recover": {
@@ -161,7 +191,9 @@ export const stepDefendAI = (
         shapePhaseFor(ownHas, oppHas),
         ctx.tactics,
       );
-      moveToward(body, ctx.self, target, RECOVER_SPEED, n, stam);
+      const gait = recoverGait(ctx.self, target, ctx.role, ownHas);
+      applyPhaseFsm(ai, phase, gait);
+      moveToward(body, ctx.self, target, gait, ai, n);
       return { kind: "none", phase };
     }
   }

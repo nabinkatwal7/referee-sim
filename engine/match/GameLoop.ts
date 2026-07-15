@@ -278,23 +278,29 @@ export class GameLoop {
   getPlayerAnimationState(
     index: number,
   ):
-    | { kind: "field"; fsmState: PlayerFSMState; speed: number }
-    | { kind: "keeper"; fsmState: KeeperFSMState; speed: number }
+    | { kind: "field"; fsmState: PlayerFSMState; speed: number; vx: number; vz: number }
+    | { kind: "keeper"; fsmState: KeeperFSMState; speed: number; vx: number; vz: number }
     | null {
     const player = this.players[index];
     if (!player) return null;
     const v = player.body.linvel();
     const speed = Math.hypot(v.x, v.z);
     if (player.role === "GK" && player.keeper) {
-      return { kind: "keeper", fsmState: player.keeper.fsmState, speed };
+      return { kind: "keeper", fsmState: player.keeper.fsmState, speed, vx: v.x, vz: v.z };
     }
-    return { kind: "field", fsmState: player.ai.fsmState, speed };
+    return { kind: "field", fsmState: player.ai.fsmState, speed, vx: v.x, vz: v.z };
   }
 
   getRefereeSpeed(): number {
     if (!this.referee) return 0;
     const v = this.referee.body.linvel();
     return Math.hypot(v.x, v.z);
+  }
+
+  getRefereeVelocity(): { x: number; z: number; speed: number } {
+    if (!this.referee) return { x: 0, z: 0, speed: 0 };
+    const v = this.referee.body.linvel();
+    return { x: v.x, z: v.z, speed: Math.hypot(v.x, v.z) };
   }
 
   getBallPossession(): BallPossession {
