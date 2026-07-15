@@ -1,14 +1,19 @@
-import Ground from "./Ground";
-import Pitch from "./Pitch";
-import Lines from "./Lines";
-import Goals from "./Goals";
-import Seats from "./Seats";
-import Roof from "./Roof";
-import Players from "./Players";
+import type { RapierRigidBody } from "@react-three/rapier";
 import Ball from "./Ball";
+import Goals from "./Goals";
+import Ground from "./Ground";
+import Lines from "./Lines";
+import Pitch from "./Pitch";
+import Players from "./Players";
 import Referee from "./Referee";
+import Roof from "./Roof";
+import Seats from "./Seats";
 
-const Scene = () => {
+type Props = {
+  refereeRef: React.RefObject<RapierRigidBody | null>;
+};
+
+const Scene = ({ refereeRef }: Props) => {
   return (
     <>
       <Ground />
@@ -19,7 +24,7 @@ const Scene = () => {
       <Roof />
       <Players />
       <Ball />
-      <Referee />
+      <Referee ref={refereeRef} />
     </>
   );
 };

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RigidBody } from "@react-three/rapier";
 import { PITCH_LENGTH } from "./pitchDimensions";
 
 const GOAL_WIDTH = 7.32;
@@ -10,16 +11,21 @@ const GoalFrame = ({ z, facing }: { z: number; facing: 1 | -1 }) => {
   const halfWidth = GOAL_WIDTH / 2;
 
   return (
-    <group position={[0, 0, z]}>
-      <mesh castShadow position={[-halfWidth, GOAL_HEIGHT / 2, 0]}>
+    <RigidBody type="fixed" colliders="hull" position={[0, 0, z]}>
+      <mesh castShadow receiveShadow position={[-halfWidth, GOAL_HEIGHT / 2, 0]}>
         <cylinderGeometry args={[POST_RADIUS, POST_RADIUS, GOAL_HEIGHT, 12]} />
         <meshStandardMaterial color="#ffffff" />
       </mesh>
-      <mesh castShadow position={[halfWidth, GOAL_HEIGHT / 2, 0]}>
+      <mesh castShadow receiveShadow position={[halfWidth, GOAL_HEIGHT / 2, 0]}>
         <cylinderGeometry args={[POST_RADIUS, POST_RADIUS, GOAL_HEIGHT, 12]} />
         <meshStandardMaterial color="#ffffff" />
       </mesh>
-      <mesh castShadow position={[0, GOAL_HEIGHT, 0]} rotation={[0, 0, Math.PI / 2]}>
+      <mesh
+        castShadow
+        receiveShadow
+        position={[0, GOAL_HEIGHT, 0]}
+        rotation={[0, 0, Math.PI / 2]}
+      >
         <cylinderGeometry args={[POST_RADIUS, POST_RADIUS, GOAL_WIDTH, 12]} />
         <meshStandardMaterial color="#ffffff" />
       </mesh>
@@ -33,7 +39,7 @@ const GoalFrame = ({ z, facing }: { z: number; facing: 1 | -1 }) => {
           side={THREE.DoubleSide}
         />
       </mesh>
-    </group>
+    </RigidBody>
   );
 };
 

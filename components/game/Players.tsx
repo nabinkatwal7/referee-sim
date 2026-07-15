@@ -14,7 +14,7 @@ const Players = () => {
     <>
       {PLAYER_POSITIONS.map((position, i) => (
         <RigidBody key={i} position={position} colliders="hull">
-          <mesh castShadow>
+          <mesh castShadow receiveShadow>
             <capsuleGeometry args={[0.4, 1.2, 4, 8]} />
             <meshStandardMaterial color="#1976d2" />
           </mesh>

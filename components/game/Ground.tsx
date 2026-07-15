@@ -1,5 +1,9 @@
 import { RigidBody } from "@react-three/rapier";
-import { PITCH_WIDTH, PITCH_LENGTH, STAND_DEPTH_TOTAL } from "./pitchDimensions";
+import {
+  PITCH_LENGTH,
+  PITCH_WIDTH,
+  STAND_DEPTH_TOTAL,
+} from "./pitchDimensions";
 
 const MARGIN = 10;
 

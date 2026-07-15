@@ -9,47 +9,95 @@ import {
   STAND_DEPTH_TOTAL,
 } from "./pitchDimensions";
 
-const SEAT_COLORS = ["#37474f", "#455a64"];
+// Blaugrana-inspired tier colors: mostly garnet, a blue band, one patterned
+// band, and a gold crown trim at the very top tier.
+const GARNET = "#A50044";
+const BLUE = "#004D98";
+const GOLD = "#FFED02";
+const PATTERN = "pattern" as const;
+const TIER_COLORS: (string | typeof PATTERN)[] = [
+  GARNET,
+  GARNET,
+  GARNET,
+  BLUE,
+  BLUE,
+  GARNET,
+  PATTERN,
+  GARNET,
+  GARNET,
+  GOLD,
+];
+if (TIER_COLORS.length !== STAND_TIERS) {
+  throw new Error(`TIER_COLORS must have exactly STAND_TIERS (${STAND_TIERS}) entries`);
+}
+const PATTERN_COLORS = [BLUE, GOLD];
+const PATTERN_SEGMENTS = 16;
 
 type Side = "north" | "south" | "east" | "west";
+type Box3 = [number, number, number];
+type TierSpec = { position: Box3; args: Box3; color: string };
+type Footprint = { position: Box3; args: Box3 };
 
-const buildTiers = (side: Side) => {
+const tierFootprint = (
+  side: Side,
+  standLength: number,
+  height: number,
+  offset: number,
+): Footprint => {
+  switch (side) {
+    case "north":
+      return {
+        position: [0, height / 2, -PITCH_LENGTH / 2 - offset],
+        args: [standLength, height, STAND_TIER_DEPTH],
+      };
+    case "south":
+      return {
+        position: [0, height / 2, PITCH_LENGTH / 2 + offset],
+        args: [standLength, height, STAND_TIER_DEPTH],
+      };
+    case "east":
+      return {
+        position: [PITCH_WIDTH / 2 + offset, height / 2, 0],
+        args: [STAND_TIER_DEPTH, height, standLength],
+      };
+    case "west":
+      return {
+        position: [-PITCH_WIDTH / 2 - offset, height / 2, 0],
+        args: [STAND_TIER_DEPTH, height, standLength],
+      };
+  }
+};
+
+const splitIntoPattern = (side: Side, tier: Footprint): TierSpec[] => {
+  const isLengthwise = side === "north" || side === "south";
+  const lengthAxis = isLengthwise ? 0 : 2;
+  const fullLength = tier.args[lengthAxis];
+  const segLength = fullLength / PATTERN_SEGMENTS;
+
+  return Array.from({ length: PATTERN_SEGMENTS }, (_, i) => {
+    const args = [...tier.args] as Box3;
+    args[lengthAxis] = segLength;
+    const position = [...tier.position] as Box3;
+    position[lengthAxis] += -fullLength / 2 + segLength * (i + 0.5);
+    return { position, args, color: PATTERN_COLORS[i % PATTERN_COLORS.length] };
+  });
+};
+
+const buildTiers = (side: Side): TierSpec[] => {
   const isLengthwise = side === "north" || side === "south";
   // Full outer footprint (not just the pitch-side span) so adjacent stands
   // meet at the corners instead of leaving the bowl open.
   const standLength = (isLengthwise ? PITCH_WIDTH : PITCH_LENGTH) + 2 * STAND_DEPTH_TOTAL;
 
-  return Array.from({ length: STAND_TIERS }, (_, i) => {
+  return TIER_COLORS.flatMap((color, i) => {
     const height = STAND_TIER_HEIGHT * (i + 1);
     const offset = STAND_GAP_FROM_PITCH + i * STAND_TIER_DEPTH;
-    const color = SEAT_COLORS[i % SEAT_COLORS.length];
+    const tier = tierFootprint(side, standLength, height, offset);
 
-    switch (side) {
-      case "north":
-        return {
-          position: [0, height / 2, -PITCH_LENGTH / 2 - offset] as [number, number, number],
-          args: [standLength, height, STAND_TIER_DEPTH] as [number, number, number],
-          color,
-        };
-      case "south":
-        return {
-          position: [0, height / 2, PITCH_LENGTH / 2 + offset] as [number, number, number],
-          args: [standLength, height, STAND_TIER_DEPTH] as [number, number, number],
-          color,
-        };
-      case "east":
-        return {
-          position: [PITCH_WIDTH / 2 + offset, height / 2, 0] as [number, number, number],
-          args: [STAND_TIER_DEPTH, height, standLength] as [number, number, number],
-          color,
-        };
-      case "west":
-        return {
-          position: [-PITCH_WIDTH / 2 - offset, height / 2, 0] as [number, number, number],
-          args: [STAND_TIER_DEPTH, height, standLength] as [number, number, number],
-          color,
-        };
+    if (color === PATTERN) {
+      return splitIntoPattern(side, tier);
     }
+    return [{ ...tier, color }];
   });
 };
 

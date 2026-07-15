@@ -55,16 +55,16 @@ const RoofPanel = ({ side }: { side: Side }) => {
   return (
     <mesh castShadow receiveShadow position={position} rotation={rotation}>
       <boxGeometry args={args} />
-      <meshStandardMaterial color="#1c2529" />
+      <meshStandardMaterial color="#e8e6df" />
     </mesh>
   );
 };
 
 const Roof = () => {
+  // Camp-Nou-style partial coverage: roof over the two long touchline
+  // stands only, leaving the goal-end stands open to the sky.
   return (
     <>
-      <RoofPanel side="north" />
-      <RoofPanel side="south" />
       <RoofPanel side="east" />
       <RoofPanel side="west" />
     </>

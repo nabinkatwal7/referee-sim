@@ -74,7 +74,7 @@ const Lines = () => {
   const texture = useMemo(() => createLineTexture(), []);
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+    <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
       <planeGeometry args={[PITCH_WIDTH, PITCH_LENGTH]} />
       <meshStandardMaterial map={texture} transparent />
     </mesh>

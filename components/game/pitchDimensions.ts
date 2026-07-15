@@ -7,3 +7,5 @@ export const STAND_TIER_DEPTH = 2.8;
 export const STAND_GAP_FROM_PITCH = 4;
 export const STAND_DEPTH_TOTAL = STAND_GAP_FROM_PITCH + STAND_TIERS * STAND_TIER_DEPTH;
 export const STAND_TOP_HEIGHT = STAND_TIERS * STAND_TIER_HEIGHT;
+
+export const REFEREE_START_POSITION: [number, number, number] = [0, 1, 3];
