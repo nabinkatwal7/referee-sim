@@ -1,6 +1,7 @@
 import { PITCH_LENGTH } from "../components/game/pitchDimensions";
 
-export type Role = "GK" | "LB" | "CB" | "RB" | "CDM" | "CM" | "CAM" | "LW" | "RW" | "ST";
+export type Role =
+  "GK" | "LB" | "CB" | "RB" | "CDM" | "CM" | "CAM" | "LW" | "RW" | "ST";
 
 export type FormationSlot = {
   role: Role;
@@ -30,7 +31,11 @@ export type Side = "A" | "B";
 // Every player owns a home position, derived from its formation slot and
 // which goal its team defends (team B's shape mirrors team A's across the
 // halfway line).
-export const homePositionForSlot = (slot: FormationSlot, side: Side): [number, number, number] => {
-  const z = side === "A" ? -OWN_GOAL_LINE + slot.forward : OWN_GOAL_LINE - slot.forward;
+export const homePositionForSlot = (
+  slot: FormationSlot,
+  side: Side,
+): [number, number, number] => {
+  const z =
+    side === "A" ? -OWN_GOAL_LINE + slot.forward : OWN_GOAL_LINE - slot.forward;
   return [slot.x, 1, z];
 };

@@ -15,6 +15,16 @@ import {
 } from "../../entities/Player/brain";
 import { checkBoundary } from "../../entities/Ball/boundary";
 import { detectCollision } from "../../entities/Ball/collision";
+import {
+  findNearestPlayer,
+  type NearestPlayer,
+} from "../../entities/Ball/nearestPlayer";
+import {
+  createBallPossession,
+  recordTouch,
+  setLoose,
+  type BallPossession,
+} from "../../entities/Ball/possession";
 import { detectPlayerCollisions } from "../../entities/Player/collisionDetector";
 import { stepRefereeMovement, type RefereeInput } from "../../entities/Referee/movement";
 import { computeVision, decideCall, type Vision } from "../referee/vision";
@@ -66,6 +76,10 @@ export class GameLoop {
   private ball: RapierRigidBody | null = null;
   private referee: RefereeHandle | null = null;
   private brain: BrainState = createBrainState();
+  // Engine truth for who owns / last touched the ball (Loose|Blue|Red|GK).
+  // Distinct from Zustand's simpler `possession: playerIndex` mirror.
+  private ballPossession: BallPossession = createBallPossession();
+  private nearestToBall: NearestPlayer | null = null;
   private lastTouchTeam: TeamId | null = null;
   private previousBallVelocity = { x: 0, z: 0 };
   private replayBuffer = new ReplayBuffer();
@@ -140,6 +154,14 @@ export class GameLoop {
     if (!this.referee) return 0;
     const v = this.referee.body.linvel();
     return Math.hypot(v.x, v.z);
+  }
+
+  getBallPossession(): BallPossession {
+    return this.ballPossession;
+  }
+
+  getNearestToBall(): NearestPlayer | null {
+    return this.nearestToBall;
   }
 
   tick(delta: number) {
@@ -249,6 +271,8 @@ export class GameLoop {
       player.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     });
     this.brain = createBrainState();
+    this.ballPossession = createBallPossession();
+    this.nearestToBall = null;
     this.lastTouchTeam = null;
   }
 
@@ -290,14 +314,48 @@ export class GameLoop {
       this.bus.emit({ kind: "collision", position: { x: p.x, z: p.z }, at: this.clock });
     }
 
-    const result = stepMatchBrain(this.ball, this.players, this.brain, delta);
+    // Step 24 — nearest player every frame (receiver candidate).
+    this.nearestToBall = this.findNearestPlayerToBall();
+
+    const result = stepMatchBrain(this.ball, this.players, this.brain, delta, this.nearestToBall);
     if (result) this.handleBrainEvent(result);
+    this.syncBallPossession();
 
     const boundary = checkBoundary(this.ball, this.lastTouchTeam);
     if (boundary) this.bus.emit({ ...boundary, at: this.clock });
 
     const v = this.ball.linvel();
     this.previousBallVelocity = { x: v.x, z: v.z };
+  }
+
+  private findNearestPlayerToBall(): NearestPlayer | null {
+    if (!this.ball) return null;
+    const ballPos = this.ball.translation();
+    return findNearestPlayer(ballPos, this.players.length, (i) => {
+      const player = this.players[i];
+      if (!player) return null;
+      const p = player.body.translation();
+      return { x: p.x, z: p.z };
+    });
+  }
+
+  // Keep ball.owner / lastTouch / previousTouch in lockstep with brain.possessor.
+  private syncBallPossession() {
+    const idx = this.brain.possessor;
+    const owned = this.ballPossession.owner.playerIndex;
+
+    if (idx === owned) return;
+
+    if (idx === null) {
+      setLoose(this.ballPossession);
+      return;
+    }
+
+    const player = this.players[idx];
+    if (!player) return;
+    const role = player.team.players.find((p) => p.index === idx)?.role ?? "CM";
+    recordTouch(this.ballPossession, idx, player.team.id, role, this.clock);
+    this.lastTouchTeam = player.team.id;
   }
 
   private handleBrainEvent(result: BrainEvent) {

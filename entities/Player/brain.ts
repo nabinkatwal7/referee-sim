@@ -2,10 +2,13 @@ import type { RapierRigidBody } from "@react-three/rapier";
 import { MathUtils } from "three";
 import { PENALTY_BOX_DEPTH, PENALTY_BOX_WIDTH, PITCH_LENGTH } from "../../components/game/pitchDimensions";
 import type { Team, TeamId } from "../../engine/team/Team";
+import {
+  canReceive,
+  findNearestPlayer,
+  type NearestPlayer,
+} from "../Ball/nearestPlayer";
 import { enterReactionState, type PlayerAIState } from "./ai";
 
-const PICKUP_RADIUS = 6; // generous — players wander independently, not toward the ball
-const SETTLE_SPEED = 1.5; // ball must be slower than this to be "received"
 const MIN_HOLD = 1.2; // seconds a possessor waits before acting
 const MAX_HOLD = 2.5;
 const MIN_PASS_SPEED = 6;
@@ -115,29 +118,28 @@ export const stepMatchBrain = (
   players: (PlayerRef | null)[],
   state: BrainState,
   delta: number,
+  // Precomputed every frame by GameLoop (Step 24). When null, we re-scan —
+  // kept optional so the brain stays callable on its own.
+  nearestToBall: NearestPlayer | null = null,
 ): MatchEvent | null => {
   const ballPos = ball.translation();
   const ballVel = ball.linvel();
   const ballSpeed = Math.hypot(ballVel.x, ballVel.z);
 
   if (state.possessor === null) {
-    if (ballSpeed >= SETTLE_SPEED) return null;
+    const nearest =
+      nearestToBall ??
+      findNearestPlayer(ballPos, players.length, (i) => {
+        const player = players[i];
+        if (!player) return null;
+        const p = player.body.translation();
+        return { x: p.x, z: p.z };
+      });
+    if (!nearest || !canReceive(ballSpeed, nearest.dist)) return null;
+    const receiverIndex = nearest.index;
 
-    let nearest: number | null = null;
-    let nearestDist = PICKUP_RADIUS;
-    players.forEach((player, i) => {
-      if (!player) return;
-      const p = player.body.translation();
-      const dist = Math.hypot(p.x - ballPos.x, p.z - ballPos.z);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = i;
-      }
-    });
-    if (nearest === null) return null;
-    const receiverIndex: number = nearest;
-
-    const receiver = players[receiverIndex]!;
+    const receiver = players[receiverIndex];
+    if (!receiver) return null;
     let winnerIndex: number = receiverIndex;
     let outcome: MatchEvent | null = null;
 

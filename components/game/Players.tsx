@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import Player from "../../entities/Player";
 import type { GameLoop } from "../../engine/match/GameLoop";
 import type { Team } from "../../engine/team/Team";
+import Player from "../../entities/Player";
 
 type RosterEntry = {
   index: number;
@@ -13,8 +13,22 @@ type RosterEntry = {
 };
 
 const flattenRoster = (home: Team, away: Team): RosterEntry[] => [
-  ...home.players.map((p) => ({ index: p.index, home: p.home, team: home, color: home.color, name: p.name, role: p.role })),
-  ...away.players.map((p) => ({ index: p.index, home: p.home, team: away, color: away.color, name: p.name, role: p.role })),
+  ...home.players.map((p) => ({
+    index: p.index,
+    home: p.home,
+    team: home,
+    color: home.color,
+    name: p.name,
+    role: p.role,
+  })),
+  ...away.players.map((p) => ({
+    index: p.index,
+    home: p.home,
+    team: away,
+    color: away.color,
+    name: p.name,
+    role: p.role,
+  })),
 ];
 
 type Props = {

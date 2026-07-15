@@ -39,7 +39,9 @@ const Whistle = ({ gameLoop }: Props) => {
         color: "white",
       }}
     >
-      <div style={{ fontSize: 18, fontWeight: 600 }}>Incident: #{foul.playerA} vs #{foul.playerB}</div>
+      <div style={{ fontSize: 18, fontWeight: 600 }}>
+        Incident: #{foul.playerA} vs #{foul.playerB}
+      </div>
       <div style={{ opacity: 0.8, fontSize: 13 }}>What's the call?</div>
       <div style={{ display: "flex", gap: "0.75rem" }}>
         {OPTIONS.map(({ action, label }) => (
